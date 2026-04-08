@@ -1,158 +1,48 @@
-const SLA = 60, CONC = 0.3;
-let committee = false;
+import json
 
-// 1. Usando a injeção do Python (basta rodar o seu script gerar_dashboard_final.py)
-// Isso evita o erro de bloqueio do navegador (CORS)
-const DATA = __DADOS_JSON__; 
+caminho_arquivo = 'base_marco_liquidacoes.json'
 
-// 2. Função blindada para ler dinheiro e números com vírgula do Brasil
-function lerNumero(valor) {
-    if (!valor) return 0;
-    if (typeof valor === 'number') return valor;
+def ler_numero(valor):
+    """Garante que o valor seja convertido para float, mesmo se vier como texto do Brasil."""
+    if valor is None:
+        return 0.0
+    if isinstance(valor, (int, float)):
+        return float(valor)
     
-    // Transforma "R$ 1.500,50" -> "1500.50"
-    let limpo = valor.toString()
-        .replace(/[R$\s]/g, '') // Tira o R$ e espaços
-        .replace(/\./g, '')     // Tira os pontos de milhar
-        .replace(',', '.');     // Troca a vírgula decimal por ponto
+    # Limpa formatação brasileira caso seja string
+    limpo = str(valor).replace('R$', '').replace(' ', '')
+    limpo = limpo.replace('.', '').replace(',', '.')
+    
+    try:
+        return float(limpo)
+    except ValueError:
+        return 0.0
+
+try:
+    with open(caminho_arquivo, 'r', encoding='utf-8') as f:
+        dados = json.load(f)
+
+    volume_apos_20h = 0.0
+    qtd_operacoes = 0
+
+    for linha in dados:
+        # Pega a hora e garante que não dê erro se vier vazio
+        hr = str(linha.get('Hr Recepção', ''))
         
-    return parseFloat(limpo) || 0;
-}
+        if hr >= '20:00':
+            valor = ler_numero(linha.get('Financeiro', 0))
+            volume_apos_20h += valor
+            qtd_operacoes += 1
 
-// Isso vai imprimir a PRIMEIRA linha do seu JSON na tela preta de desenvolvedor do Chrome (F12)
-// Assim você pode ter 100% de certeza de como os nomes das colunas estão escritos
-console.log("A primeira linha do JSON é:", DATA[0]);
+    # Formata a saída no padrão brasileiro para facilitar a leitura
+    moeda = f"R$ {volume_apos_20h:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-function render() {
-    let inputBusca = document.getElementById('fCliente');
-    let cli = inputBusca ? inputBusca.value.toLowerCase() : '';
-    
-    let f = DATA.filter(r => {
-        let nomeCliente = r['Razão Social Cliente'] || r['Cliente'] || '';
-        return !cli || nomeCliente.toLowerCase().includes(cli);
-    });
+    print("-" * 40)
+    print("CONFERÊNCIA: OPERAÇÕES APÓS 20:00")
+    print("-" * 40)
+    print(f"Total de Operações: {qtd_operacoes}")
+    print(f"Volume Financeiro:  {moeda}")
+    print("-" * 40)
 
-    let total = f.length, apos18 = 0, soma = 0;
-    let vol18 = 0, vol19 = 0, vol20 = 0, volTot = 0;
-    let porCli = {}, valorCli = {}, fa = {"00-12":0, "12-18":0, "18-19":0, "19-20":0, ">20":0};
-
-    f.forEach(r => {
-        let h = r['Hr Recepção'] || '';
-        // Usando a função nova para garantir que lê o número
-        let lt = lerNumero(r['LeadTime_Min']);
-        let val = lerNumero(r['Financeiro']);
-        let nomeCliente = r['Razão Social Cliente'] || r['Cliente'] || 'Desconhecido';
-
-        soma += lt;
-        volTot += val;
-        
-        porCli[nomeCliente] = (porCli[nomeCliente] || 0) + 1;
-        valorCli[nomeCliente] = (valorCli[nomeCliente] || 0) + val;
-
-        if(h >= '18:00') { apos18++; }
-        if(h >= '18:00' && h < '19:00') { vol18 += val; }
-        else if(h >= '19:00' && h < '20:00') { vol19 += val; }
-        else if(h >= '20:00') { vol20 += val; }
-
-        let hh = parseInt(h.substring(0, 2)) || 0;
-        if(hh < 12) fa["00-12"]++;
-        else if(hh < 18) fa["12-18"]++;
-        else if(hh < 19) fa["18-19"]++;
-        else if(hh < 20) fa["19-20"]++;
-        else fa[">20"]++;
-    });
-
-    let top = Object.entries(porCli).sort((a, b) => b[1] - a[1]);
-    let top1 = top[0] || ['-', 0];
-
-    document.getElementById('cTotal').innerText = total;
-    document.getElementById('c18').innerText = apos18;
-    document.getElementById('cTempo').innerText = total ? Math.round(soma / total) : 0;
-    document.getElementById('cTop').innerText = top1[0];
-
-    document.getElementById('v18').innerText = fmt(vol18);
-    document.getElementById('v19').innerText = fmt(vol19);
-    document.getElementById('v20').innerText = fmt(vol20);
-    
-    let elPct = document.getElementById('pctTardio');
-    if (elPct) elPct.innerText = volTot ? Math.round(((vol18 + vol19 + vol20) / volTot) * 100) + '%' : '0%';
-
-    ['card18', 'card19', 'card20'].forEach(id => {
-        let el = document.getElementById(id);
-        if (el) el.className = 'card';
-    });
-    
-    let m = Math.max(vol18, vol19, vol20);
-    
-    if(m === vol20 && vol20 > 0) document.getElementById('card20').classList.add('card-risk');
-    else if(m === vol19 && vol19 > 0) document.getElementById('card19').classList.add('card-warn');
-    else if (vol18 > 0) document.getElementById('card18').classList.add('card-safe');
-
-    gerarSemaforo(soma / (total || 1), apos18, total, top1);
-    gerarResumo(total, apos18, soma / (total || 1), vol18 + vol19 + vol20, volTot, top1);
-
-    let top10Table = document.getElementById('top10');
-    if (top10Table) {
-        top10Table.innerHTML = '';
-        top.slice(0, 10).forEach(([c, q]) => {
-            let a = f.filter(r => (r['Razão Social Cliente'] || r['Cliente'] || 'Desconhecido') === c && (r['Hr Recepção'] || '') >= '18:00').length;
-            top10Table.innerHTML += `<tr><td>${c}</td><td>${q}</td><td>${Math.round((a / q) * 100) || 0}%</td></tr>`;
-        });
-    }
-
-    let top10CardsDiv = document.getElementById('top10Cards');
-    if (top10CardsDiv) {
-        top10CardsDiv.innerHTML = '';
-        Object.entries(valorCli).sort((a, b) => b[1] - a[1]).slice(0, 10).forEach(([c, v]) => {
-            let vA = f.filter(r => (r['Razão Social Cliente'] || r['Cliente'] || 'Desconhecido') === c && (r['Hr Recepção'] || '') >= '18:00')
-                      .reduce((s, r) => s + lerNumero(r['Financeiro']), 0);
-            
-            let percApos18 = v > 0 ? Math.round((vA / v) * 100) : 0;
-            top10CardsDiv.innerHTML += `<div class="card"><b>${c}</b><br>${fmt(v)}<br><span class="${(vA / v) > CONC ? 'bad' : 'ok'}">${percApos18}% após 18h</span></div>`;
-        });
-    }
-
-    let faixasTable = document.getElementById('faixas');
-    if (faixasTable) {
-        faixasTable.innerHTML = '';
-        Object.entries(fa).forEach(([k, v]) => faixasTable.innerHTML += `<tr><td>${k}</td><td>${v}</td></tr>`);
-    }
-}
-
-function gerarSemaforo(s, a, t, top) {
-    let cor = 'green', txt = 'BAIXO';
-    if(s > SLA || (top[1] / t) > CONC) { cor = 'yellow'; txt = 'MÉDIO'; }
-    if(s > SLA && a > 0 && (top[1] / t) > CONC) { cor = 'red'; txt = 'ALTO'; }
-    
-    let sem = document.getElementById('sem');
-    if (sem) {
-        sem.className = `sem ${cor}`; 
-        sem.innerText = txt;
-    }
-}
-
-function gerarResumo(t, a, s, vT, vTot, top) {
-    let percVol = vTot ? Math.round(vT / vTot * 100) : 0;
-    let percOps = t ? Math.round(top[1] / t * 100) : 0;
-    
-    let resumoDiv = document.getElementById('resumo');
-    if (resumoDiv) {
-        resumoDiv.innerHTML = `
-            No período analisado, <strong>${t}</strong> operações foram liquidadas, com SLA médio de <strong>${Math.round(s)}</strong> minutos. <br>
-            Cerca de <strong>${percVol}%</strong> do volume financeiro ocorreu após as 18h. <br>
-            O cliente <strong>${top[0]}</strong> concentrou <strong>${percOps}%</strong> das operações.
-        `;
-    }
-}
-
-function fmt(v) {
-    return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function toggleMode() {
-    committee = !committee;
-    document.body.classList.toggle('full', committee);
-}
-
-// Inicia a renderização assim que o script carrega
-render();
+except FileNotFoundError:
+    print(f"Arquivo '{caminho_arquivo}' não encontrado. Execute o script na mesma pasta do JSON.")
