@@ -1,203 +1,126 @@
-<div class="cards">
-    <div class="card">
-        <h2 id="kpiFinanceiro">-</h2>
-        <p>Total Financeiro</p>
-    </div>
-    <div class="card">
-        <h2 id="kpiOperacoes">-</h2>
-        <p>Operações Liquidadas</p>
-    </div>
-    <div class="card alert">
-        <h2 id="kpiApos18">-</h2>
-        <p>Operações após 18:00</p>
-    </div>
-    <div class="card">
-        <h2 id="kpiMaiorClienteNome">-</h2>
-        <p>Maior Cliente</p>
-    </div>
-    <div class="card alert">
-        <h2 id="kpiLeadTime">-</h2>
-        <p>Maior Lead Time</p>
-    </div>
-</div>
+const SLA = 60, CONC = 0.3;
+let committee = false, DATA = [];
 
+// Carrega o JSON
+fetch('base_marco_liquidacoes.json')
+    .then(r => r.json())
+    .then(j => { DATA = j; render(); })
+    .catch(err => console.error("Erro ao carregar JSON:", err));
 
-
-
-
-
-
-<div class="cards">
-    <div class="card">
-        <h2 id="kpiFinanceiro">-</h2>
-        <p>Total Financeiro</p>
-    </div>
-    <div class="card">
-        <h2 id="kpiOperacoes">-</h2>
-        <p>Operações Liquidadas</p>
-    </div>
-    <div class="card alert">
-        <h2 id="kpiApos18">-</h2>
-        <p>Operações após 18:00</p>
-    </div>
-    <div class="card">
-        <h2 id="kpiMaiorClienteNome">-</h2>
-        <p>Maior Cliente</p>
-    </div>
-    <div class="card alert">
-        <h2 id="kpiLeadTime">-</h2>
-        <p>Maior Lead Time</p>
-    </div>
-</div>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<script>
-    // Injeção do Python (MANTENHA ISSO)
-    const BASE_ORIGINAL = __DADOS_JSON__;
+function render() {
+    let inputBusca = document.getElementById('fCliente');
+    let cli = inputBusca ? inputBusca.value.toLowerCase() : '';
     
-    // Variável para lidar com os filtros
-    let dadosAtuais = BASE_ORIGINAL;
+    // Filtro principal
+    let f = DATA.filter(r => {
+        let nomeCliente = r['Razão Social Cliente'] || r['Cliente'] || '';
+        return !cli || nomeCliente.toLowerCase().includes(cli);
+    });
 
-    // Função auxiliar para formatar dinheiro (Ex: R$ 3.400.000,00)
-    const formatarDinheiro = (valor) => {
-        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
-    };
+    let total = f.length, apos18 = 0, soma = 0;
+    let vol18 = 0, vol19 = 0, vol20 = 0, volTot = 0;
+    let porCli = {}, valorCli = {}, fa = {"00-12":0, "12-18":0, "18-19":0, "19-20":0, ">20":0};
 
-    // Função principal que lê o JSON e constrói o dashboard
-    function renderizarDashboard(dados) {
-        if (!dados || dados.length === 0) return;
+    // Loop de cálculo usando as colunas reais
+    f.forEach(r => {
+        let h = r['Hr Recepção'] || '';
+        let lt = parseFloat(r['LeadTime_Min']) || 0;
+        let val = parseFloat(r['Financeiro']) || 0;
+        let nomeCliente = r['Razão Social Cliente'] || r['Cliente'] || 'Desconhecido';
 
-        let totalFinanceiro = 0;
-        let operacoesApos18 = 0;
-        let maiorLeadTime = 0;
-        let financeiroPorCliente = {}; // Para achar o maior cliente
-
-        const tbOperacoes = document.getElementById('tbOperacoes');
-        tbOperacoes.innerHTML = ''; // Limpa a tabela
-
-        // 1. Loop principal pelos dados
-        dados.forEach(linha => {
-            // Tratamento de conversão (caso os números venham como string do JSON)
-            let valorFin = parseFloat(linha['financeiro']) || 0;
-            let leadTime = parseFloat(linha['lead time min']) || 0;
-            let cliente = linha['cliente'] || linha['razão social do cliente'] || 'Desconhecido';
-            let faixa = linha['faixa horário'] || '';
-
-            // Cálculos para os KPIs
-            totalFinanceiro += valorFin;
-            
-            if (faixa >= '18:00') {
-                operacoesApos18++;
-            }
-
-            if (leadTime > maiorLeadTime) {
-                maiorLeadTime = leadTime;
-            }
-
-            // Agrupamento para descobrir o maior cliente
-            if (!financeiroPorCliente[cliente]) {
-                financeiroPorCliente[cliente] = 0;
-            }
-            financeiroPorCliente[cliente] += valorFin;
-
-            // Preenchendo a tabela de Operações
-            let tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${linha['data da operação']}</td>
-                <td>${cliente}</td>
-                <td>${faixa}</td>
-                <td>${formatarDinheiro(valorFin)}</td>
-                <td>${leadTime} min</td>
-            `;
-            tbOperacoes.appendChild(tr);
-        });
-
-        // 2. Encontrar o maior cliente
-        let maiorCliente = "";
-        let maxValorCliente = 0;
-        for (const [cli, valor] of Object.entries(financeiroPorCliente)) {
-            if (valor > maxValorCliente) {
-                maxValorCliente = valor;
-                maiorCliente = cli;
-            }
-        }
-
-        // 3. Atualizar os Cards (Visão Executiva) no HTML
-        document.getElementById('kpiFinanceiro').innerText = formatarDinheiro(totalFinanceiro);
-        document.getElementById('kpiOperacoes').innerText = dados.length;
+        soma += lt;
+        volTot += val;
         
-        let percApos18 = ((operacoesApos18 / dados.length) * 100).toFixed(0);
-        document.getElementById('kpiApos18').innerText = `${percApos18}%`;
+        porCli[nomeCliente] = (porCli[nomeCliente] || 0) + 1;
+        valorCli[nomeCliente] = (valorCli[nomeCliente] || 0) + val;
+
+        if(h >= '18:00') { apos18++; }
+        if(h >= '18:00' && h < '19:00') { vol18 += val; }
+        else if(h >= '19:00' && h < '20:00') { vol19 += val; }
+        else if(h >= '20:00') { vol20 += val; }
+
+        let hh = parseInt(h.substring(0, 2)) || 0;
+        if(hh < 12) fa["00-12"]++;
+        else if(hh < 18) fa["12-18"]++;
+        else if(hh < 19) fa["18-19"]++;
+        else if(hh < 20) fa["19-20"]++;
+        else fa[">20"]++;
+    });
+
+    let top = Object.entries(porCli).sort((a, b) => b[1] - a[1]);
+    let top1 = top[0] || ['-', 0];
+
+    // Atualiza KPIs principais
+    cTotal.innerText = total;
+    c18.innerText = apos18;
+    cTempo.innerText = total ? Math.round(soma / total) : 0;
+    cTop.innerText = top1[0];
+
+    // Atualiza KPIs Financeiros
+    v18.innerText = fmt(vol18);
+    v19.innerText = fmt(vol19);
+    v20.innerText = fmt(vol20);
+    pctTardio.innerText = volTot ? Math.round(((vol18 + vol19 + vol20) / volTot) * 100) + '%' : '0%';
+
+    ['card18', 'card19', 'card20'].forEach(id => document.getElementById(id).className = 'card');
+    let m = Math.max(vol18, vol19, vol20);
+    
+    if(m === vol20 && vol20 > 0) document.getElementById('card20').classList.add('card-risk');
+    else if(m === vol19 && vol19 > 0) document.getElementById('card19').classList.add('card-warn');
+    else if (vol18 > 0) document.getElementById('card18').classList.add('card-safe');
+
+    gerarSemaforo(soma / (total || 1), apos18, total, top1);
+    gerarResumo(total, apos18, soma / (total || 1), vol18 + vol19 + vol20, volTot, top1);
+
+    // Tabela Top 10 Operacional
+    top10.innerHTML = '';
+    top.slice(0, 10).forEach(([c, q]) => {
+        let a = f.filter(r => (r['Razão Social Cliente'] || r['Cliente'] || 'Desconhecido') === c && (r['Hr Recepção'] || '') >= '18:00').length;
+        top10.innerHTML += `<tr><td>${c}</td><td>${q}</td><td>${Math.round(a / q * 100) || 0}%</td></tr>`;
+    });
+
+    // Cards Top 10 Financeiro
+    top10Cards.innerHTML = '';
+    Object.entries(valorCli).sort((a, b) => b[1] - a[1]).slice(0, 10).forEach(([c, v]) => {
+        let vA = f.filter(r => (r['Razão Social Cliente'] || r['Cliente'] || 'Desconhecido') === c && (r['Hr Recepção'] || '') >= '18:00')
+                  .reduce((s, r) => s + (parseFloat(r['Financeiro']) || 0), 0);
         
-        document.getElementById('kpiMaiorClienteNome').innerText = maiorCliente;
-        document.getElementById('kpiLeadTime').innerText = `${maiorLeadTime} min`;
-
-        // Aqui você pode adicionar as lógicas para preencher as tabelas de Clientes e Risco 
-        // usando a mesma lógica de tbOperacoes.innerHTML = ...
-    }
-
-    // Navegação das abas (seu código original)
-    function showTab(id) {
-        document.querySelectorAll('.tab').forEach(t => t.classList.add('hidden'));
-        document.getElementById(id).classList.remove('hidden');
-    }
-
-    // Funcionalidade de Filtros reais
-    function applyFilters() {
-        let fData = document.getElementById('fData').value; // Ex: 2026-03-25
-        // Nota: A data do HTML vem no formato YYYY-MM-DD. Adapte dependendo de como está no seu JSON.
+        let percApos18 = v > 0 ? Math.round((vA / v) * 100) : 0;
         
-        let fFaixa = document.getElementById('fFaixa').value;
-        let fCliente = document.getElementById('fCliente').value;
+        top10Cards.innerHTML += `<div class="card"><b>${c}</b><br>${fmt(v)}<br><span class="${(vA / v) > CONC ? 'bad' : 'ok'}">${percApos18}% após 18h</span></div>`;
+    });
 
-        // Filtra a base original
-        dadosAtuais = BASE_ORIGINAL.filter(linha => {
-            let passaData = true; // Se não escolheu data, passa tudo
-            if (fData) {
-                // Você pode precisar formatar a data aqui dependendo do formato do seu JSON
-                passaData = linha['data da operação'].includes(fData); 
-            }
-            
-            let passaFaixa = (fFaixa === 'ALL') || (linha['faixa horário'] === fFaixa);
-            let passaCliente = (fCliente === 'ALL') || (linha['cliente'] === fCliente);
+    // Tabela Faixas Horárias
+    faixas.innerHTML = '';
+    Object.entries(fa).forEach(([k, v]) => faixas.innerHTML += `<tr><td>${k}</td><td>${v}</td></tr>`);
+}
 
-            return passaData && passaFaixa && passaCliente;
-        });
+function gerarSemaforo(s, a, t, top) {
+    let cor = 'green', txt = 'BAIXO';
+    if(s > SLA || (top[1] / t) > CONC) { cor = 'yellow'; txt = 'MÉDIO'; }
+    if(s > SLA && a > 0 && (top[1] / t) > CONC) { cor = 'red'; txt = 'ALTO'; }
+    
+    let sem = document.getElementById('sem');
+    sem.className = `sem ${cor}`; 
+    sem.innerText = txt;
+}
 
-        // Re-renderiza o dashboard com os dados filtrados
-        renderizarDashboard(dadosAtuais);
-    }
+function gerarResumo(t, a, s, vT, vTot, top) {
+    let percVol = vTot ? Math.round(vT / vTot * 100) : 0;
+    let percOps = t ? Math.round(top[1] / t * 100) : 0;
+    
+    document.getElementById('resumo').innerHTML = `
+        No período analisado, <strong>${t}</strong> operações foram liquidadas, com SLA médio de <strong>${Math.round(s)}</strong> minutos. <br>
+        Cerca de <strong>${percVol}%</strong> do volume financeiro ocorreu após as 18h. <br>
+        O cliente <strong>${top[0]}</strong> concentrou <strong>${percOps}%</strong> das operações.
+    `;
+}
 
-    function resetFilters() {
-        document.getElementById('fData').value = '';
-        document.getElementById('fFaixa').value = 'ALL';
-        document.getElementById('fCliente').value = 'ALL';
-        
-        dadosAtuais = BASE_ORIGINAL;
-        renderizarDashboard(dadosAtuais);
-    }
+function fmt(v) {
+    return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
 
-    // Assim que a página carrega, ele renderiza o dashboard
-    window.onload = () => {
-        // Opcional: Popular o select de clientes dinamicamente
-        const selectCliente = document.getElementById('fCliente');
-        const clientesUnicos = [...new Set(BASE_ORIGINAL.map(item => item['cliente'] || item['razão social do cliente']))].sort();
-        clientesUnicos.forEach(cli => {
-            if(cli) selectCliente.innerHTML += `<option value="${cli}">${cli}</option>`;
-        });
-
-        renderizarDashboard(BASE_ORIGINAL);
-    };
-</script>
+function toggleMode() {
+    committee = !committee;
+    document.body.classList.toggle('full', committee);
+}
