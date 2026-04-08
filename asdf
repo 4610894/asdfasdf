@@ -1,0 +1,193 @@
+import json
+from pathlib import Path
+
+BASE_JSON = "base_marco_liquidacoes.json"
+OUT_FILE = "dashboard_liquidacoes_FINAL.html"
+
+# 1. Carrega os dados reais
+try:
+    with open(BASE_JSON, encoding="utf-8") as f:
+        dados = json.load(f)
+except FileNotFoundError:
+    print(f"Erro: {BASE_JSON} não encontrado. Usando lista vazia.")
+    dados = []
+
+# Converte para string JSON para injetar no JS
+json_string = json.dumps(dados, ensure_ascii=False)
+
+# 2. O Template HTML com Lógica Dinâmica
+html_template = """
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Comitê de Risco | Itaú</title>
+    <style>
+        body { margin: 0; font-family: Arial, sans-serif; background: #f2f2f2; }
+        header { background: #8c1d18; color: white; padding: 16px; font-size: 20px; font-weight: bold; }
+        .container { display: flex; height: calc(100vh - 64px); }
+        .menu { width: 220px; background: white; padding: 12px; border-right: 1px solid #ddd; }
+        .menu button { width: 100%; margin-bottom: 8px; padding: 10px; border: none; background: #8c1d18; color: white; cursor: pointer; border-radius: 4px; font-weight: bold; }
+        .content { flex: 1; padding: 20px; overflow-y: auto; }
+        .section { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .cards { display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }
+        .card { flex: 1; min-width: 200px; background: #f9f9f9; padding: 15px; border-left: 5px solid #8c1d18; border-radius: 4px; }
+        .card.alert { border-left-color: #d32f2f; background: #fff5f5; }
+        .card h2 { margin: 0; font-size: 24px; color: #333; }
+        .card p { margin: 5px 0 0; color: #666; font-size: 14px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 10px; border: 1px solid #eee; text-align: left; font-size: 13px; }
+        th { background: #8c1d18; color: white; }
+        .hidden { display: none; }
+        .filters { display: flex; gap: 10px; align-items: center; margin-bottom: 20px; background: #eee; padding: 10px; border-radius: 4px; }
+        .badge { padding: 2px 6px; border-radius: 4px; color: white; font-size: 11px; }
+        .bg-red { background: #d32f2f; }
+        .bg-orange { background: #ed6c02; }
+    </style>
+</head>
+<body>
+
+<header>Comitê de Risco 🏦 Monitoramento de Liquidações</header>
+
+<div class="container">
+    <div class="menu">
+        <button onclick="showTab('executivo')">Visão Executiva</button>
+        <button onclick="showTab('operacoes')">Detalhamento</button>
+    </div>
+
+    <div class="content">
+        <div class="filters">
+            <span>Cliente:</span>
+            <select id="fCliente" onchange="applyFilters()">
+                <option value="ALL">Todos os Clientes</option>
+            </select>
+            <button onclick="resetFilters()">Limpar</button>
+        </div>
+
+        <div id="executivo" class="tab section">
+            <h3>Resumo de Operações</h3>
+            <div class="cards">
+                <div class="card">
+                    <h2 id="cardTotalFin">R$ 0</h2>
+                    <p>Total Financeiro</p>
+                </div>
+                <div class="card">
+                    <h2 id="cardQtd">0</h2>
+                    <p>Operações Liquidadas</p>
+                </div>
+                <div class="card alert">
+                    <h2 id="cardMaxLead">0 min</h2>
+                    <p>Maior Lead Time</p>
+                </div>
+            </div>
+            
+            <h4>Top Clientes</h4>
+            <table id="tblTopClientes">
+                <thead><tr><th>Cliente</th><th>Volume Financeiro</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div id="operacoes" class="tab section hidden">
+            <h3>Detalhamento Operacional</h3>
+            <table id="tblGeral">
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Cliente</th>
+                        <th>Faixa</th>
+                        <th>Financeiro</th>
+                        <th>Lead Time</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    const dataReal = __DADOS_JSON__;
+    let filtered = [...dataReal];
+
+    // 1. Inicializa Filtros
+    function initFilters() {
+        const select = document.getElementById('fCliente');
+        const clientes = [...new Set(dataReal.map(item => item.Cliente || item['Razão Social Cliente']))].sort();
+        clientes.forEach(c => {
+            if(c) select.innerHTML += `<option value="${c}">${c}</option>`;
+        });
+    }
+
+    function showTab(id) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.add('hidden'));
+        document.getElementById(id).classList.remove('hidden');
+    }
+
+    function applyFilters() {
+        const clienteVal = document.getElementById('fCliente').value;
+        filtered = dataReal.filter(item => {
+            return clienteVal === 'ALL' || (item.Cliente || item['Razão Social Cliente']) === clienteVal;
+        });
+        renderDashboard();
+    }
+
+    function resetFilters() {
+        document.getElementById('fCliente').value = 'ALL';
+        applyFilters();
+    }
+
+    function renderDashboard() {
+        // Cálculos
+        const totalFin = filtered.reduce((acc, curr) => acc + (Number(curr.Financeiro) || 0), 0);
+        const maxLead = Math.max(...filtered.map(item => Number(item.LeadTime_Min) || 0), 0);
+
+        // Atualiza Cards
+        document.getElementById('cardTotalFin').innerText = totalFin.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        document.getElementById('cardQtd').innerText = filtered.length;
+        document.getElementById('cardMaxLead').innerText = maxLead + " min";
+
+        // Tabela Geral
+        const tbodyGeral = document.querySelector('#tblGeral tbody');
+        tbodyGeral.innerHTML = filtered.map(item => {
+            const lead = Number(item.LeadTime_Min) || 0;
+            const statusClass = lead > 60 ? 'bg-red' : 'bg-orange';
+            const statusTxt = lead > 60 ? 'Crítico' : 'Normal';
+            
+            return `<tr>
+                <td>${item.Data || '-'}</td>
+                <td>${item.Cliente || item['Razão Social Cliente'] || '-'}</td>
+                <td>${item.Faixa_Horario || '-'}</td>
+                <td>R$ ${Number(item.Financeiro || 0).toLocaleString('pt-BR')}</td>
+                <td>${lead} min</td>
+                <td><span class="badge ${statusClass}">${statusTxt}</span></td>
+            </tr>`;
+        }).join('');
+
+        // Tabela Top Clientes
+        const agrpClientes = {};
+        filtered.forEach(item => {
+            const c = item.Cliente || item['Razão Social Cliente'];
+            agrpClientes[c] = (agrpClientes[c] || 0) + (Number(item.Financeiro) || 0);
+        });
+        const top5 = Object.entries(agrpClientes).sort((a,b) => b[1] - a[1]).slice(0, 5);
+        document.querySelector('#tblTopClientes tbody').innerHTML = top5.map(c => 
+            `<tr><td>${c[0]}</td><td>R$ ${c[1].toLocaleString('pt-BR')}</td></tr>`
+        ).join('');
+    }
+
+    // Start
+    initFilters();
+    renderDashboard();
+</script>
+
+</body>
+</html>
+"""
+
+# 3. Injeta os dados e salva o arquivo
+html_final = html_template.replace("__DADOS_JSON__", json_string)
+Path(OUT_FILE).write_text(html_final, encoding="utf-8")
+
+print(f"✅ Dashboard gerado com sucesso: {OUT_FILE}")
