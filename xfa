@@ -1,0 +1,61 @@
+import win32com.client
+import pandas as pd
+import os
+
+def extrair_tabela_outlook():
+    # 1. Conectar ao Outlook que está aberto
+    outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+    
+    # 2. Acessar a Caixa de Entrada (6 é o índice para Inbox)
+    inbox = outlook.GetDefaultFolder(6)
+    mensagens = inbox.Items
+    
+    # Ordenar as mensagens pela data de recebimento (decrescente)
+    mensagens.Sort("[ReceivedTime]", True)
+
+    # 3. Filtrar pelo assunto (ajuste para o assunto gerado pela sua plataforma)
+    assunto_alvo = "Relatório da Plataforma" 
+    
+    email_encontrado = None
+    for msg in mensagens:
+        if assunto_alvo.lower() in msg.Subject.lower():
+            email_encontrado = msg
+            break # Encontrou o mais recente, para o loop
+
+    if not email_encontrado:
+        print(f"Nenhum e-mail com o assunto '{assunto_alvo}' foi encontrado.")
+        return
+
+    print(f"Processando e-mail: {email_encontrado.Subject}")
+    print(f"Recebido em: {email_encontrado.ReceivedTime}")
+
+    # 4. Extrair o HTML do corpo do e-mail
+    corpo_html = email_encontrado.HTMLBody
+
+    try:
+        # 5. Pandas lê todas as tabelas contidas no HTML
+        tabelas = pd.read_html(corpo_html)
+        
+        if tabelas:
+            # Pega a primeira tabela encontrada
+            df = tabelas[0]
+            
+            # --- ÁREA DE TRATAMENTO ---
+            # Exemplo: remover linhas totalmente vazias
+            df = df.dropna(how='all')
+            
+            # 6. Salvar o resultado
+            caminho_arquivo = os.path.join(os.getcwd(), "relatorio_tratado.xlsx")
+            df.to_excel(caminho_arquivo, index=False)
+            
+            print(f"\nSucesso! Tabela extraída e salva em:\n{caminho_arquivo}")
+            print("\nPrévia dos dados:")
+            print(df.head())
+        else:
+            print("Nenhuma tabela (tag <table>) foi detectada no corpo do e-mail.")
+
+    except Exception as e:
+        print(f"Erro ao processar a tabela: {e}")
+
+if __name__ == "__main__":
+    extrair_tabela_outlook()
