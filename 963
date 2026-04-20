@@ -1,0 +1,414 @@
+from tkinter import ttk, messagebox
+import customtkinter as ctk
+from logger import Logger
+import config
+import pyodbc
+import pandas as pd
+import os
+import re
+from datetime import timedelta
+from PIL import Image
+from holidays.countries import Brazil
+
+class RelacaoContasView(ctk.CTkFrame):
+    def __init__(self, parent, db_manager):
+        """
+        Inicializa a view de cadastro de eventos.
+
+        Parâmetros:
+            parent: Frame pai onde a view será exibida.
+            db_manager: Objeto responsável pela conexão e operações no banco de dados.
+        """
+        super().__init__(parent, fg_color='transparent')
+
+        self.db_manager = db_manager
+
+        # Variáveis de controle específicas desta aba
+        self.sac_var = ctk.StringVar()
+        self.conta_mov_var = ctk.StringVar()
+        self.conta_esp_var = ctk.StringVar()
+        self.cci_var = ctk.StringVar()
+
+        self._create_widgets()
+
+    def _create_widgets(self):
+        """Cria e organiza os elementos da interface"""
+
+        # --- CABEÇALHO ---
+        header_frame = ctk.CTkFrame(self, fg_color=config.AZUL, height=80)
+        header_frame.pack(fill='x', pady=(20, 10))
+        header_frame.pack_propagate(False)
+
+        left_container = ctk.CTkFrame(header_frame, fg_color='transparent')
+        left_container.pack(side='left', padx=20, pady=0)
+
+        # Logo
+        logo_img = ctk.CTkImage(light_image=Image.open("intern/logo2_itau.png"), size=(60, 60))
+        logo_label = ctk.CTkLabel(left_container, image=logo_img, text='', width=40, height=40)
+        logo_label.pack(side='left')
+
+        # Título
+        title_label = ctk.CTkLabel(header_frame, text='Relação de Contas (em desenvolvimento)', font=('Arial', 28, 'bold'), text_color='white')
+        title_label.pack(side='left', anchor='w', padx=(0, 0))
+
+
+        # --- LAYOUT ---
+        main_frame = ctk.CTkFrame(self, fg_color='transparent')
+        main_frame.pack(side="top", fill="both", padx=20, pady=(10, 0))
+
+        form_frame = ctk.CTkFrame(main_frame, fg_color='transparent')
+        form_frame.grid(row=0, column=0, columnspan=2, pady=(0, 20), sticky='w')
+
+        # Ícones
+        adicionar_icon = ctk.CTkImage(light_image=Image.open("intern/icons/adicionar.png"), size=(20, 20))
+        buscar_icon = ctk.CTkImage(light_image=Image.open("intern/icons/lupa.png"), size=(20, 20))
+        excel_icon = ctk.CTkImage(light_image=Image.open("intern/icons/excel.png"), size=(20, 20))
+        consultar_icon = ctk.CTkImage(light_image=Image.open("intern/icons/consultar.png"), size=(20, 20))
+        alterar_icon = ctk.CTkImage(light_image=Image.open("intern/icons/alterar.png"), size=(20, 20))
+
+
+        # Labels
+        ctk.CTkLabel(form_frame, text="SAC:", font=("Arial", 12)).grid(row=0, column=0, sticky='w', pady=(0, 2))
+        ctk.CTkLabel(form_frame, text="Conta Movimento:", font=("Arial", 12)).grid(row=0, column=1, sticky='w', pady=(0, 2))
+        ctk.CTkLabel(form_frame, text="Conta Espelho:", font=("Arial", 12)).grid(row=0, column=2, sticky='w', pady=(0, 2))
+        ctk.CTkLabel(form_frame, text="CCI:", font=("Arial", 12)).grid(row=0, column=3, sticky='w', pady=(0, 2))
+
+        # Inputs + Botões na mesma linha
+        ctk.CTkEntry(form_frame, textvariable=self.sac_var, font=("Arial", 12), width=150, border_color=config.AZUL).grid(row=1, column=0, sticky='w', padx=(0, 10))
+        ctk.CTkEntry(form_frame, textvariable=self.conta_mov_var, font=("Arial", 12), width=150, border_color=config.AZUL).grid(row=1, column=1, sticky='w', padx=(0, 10))
+        ctk.CTkEntry(form_frame, textvariable=self.conta_esp_var, font=("Arial", 12), width=150, border_color=config.AZUL).grid(row=1, column=2, sticky='w', padx=(0, 10))
+        ctk.CTkEntry(form_frame, textvariable=self.cci_var, font=("Arial", 12), width=150, border_color=config.AZUL).grid(row=1, column=3, sticky='w', padx=(0, 10))
+
+        # --- LOG E TREEVIEW ---
+        left_frame = ctk.CTkFrame(main_frame, fg_color='transparent')
+        left_frame.grid(row=1, column=0, sticky='nsew', padx=(0, 20))
+
+        right_frame = ctk.CTkFrame(main_frame, fg_color='transparent')
+        right_frame.grid(row=1, column=1, sticky='nsew', padx=(0, 20))
+
+        ctk.CTkLabel(left_frame, text='Contas inseridas hoje', font=('Arial', 14)).pack(pady=(0,5))
+
+        self.tree = ttk.Treeview(left_frame, columns=('SAC', 'Conta Movimento', 'Conta Espelho', 'CCI'), show='headings', height=22)
+        self.tree.heading('SAC', text='SAC')
+        self.tree.heading('Conta Movimento', text='Conta Movimento')
+        self.tree.heading('Conta Espelho', text='Conta Espelho')
+        self.tree.heading('CCI', text='CCI')
+
+        self.tree.column('SAC', width=75, anchor='center')
+        self.tree.column('Conta Movimento', width=150, anchor='center')
+        self.tree.column('Conta Espelho', width=100, anchor='center')
+        self.tree.column('CCI', width=75, anchor='center')
+        
+        # Configuração das cores das linhas zebradas
+        self.tree.tag_configure('impar', background='white')
+        self.tree.tag_configure('par', background='#e8e8e8')
+
+        self.tree.pack(fill='both', expand=True)
+
+        final_frame = ctk.CTkFrame(main_frame, fg_color='transparent')
+        final_frame.grid(row=2, column=0, pady=10, sticky='n')
+
+        # Botões lado a lado
+        ctk.CTkButton(final_frame, text="Consultar", command=self._consultar_contas, width=150, image=consultar_icon, fg_color=config.AZUL, hover_color=config.AZUL_HOVER).grid(row=0, column=0, padx=10, pady=10)
+        ctk.CTkButton(final_frame, text="Alterar", command=self._alterar_dados, width=150, image=alterar_icon, fg_color=config.AZUL, hover_color=config.AZUL_HOVER).grid(row=0, column=1, padx=10, pady=10)
+        ctk.CTkButton(final_frame, text="Inserir", command=self._inserir_dados, width=150, image=adicionar_icon, fg_color=config.AZUL, hover_color=config.AZUL_HOVER).grid(row=0, column=2, padx=10, pady=10)
+
+        # configurar pesos para redimensionamento
+        main_frame.grid_columnconfigure(0, weight=1)
+        main_frame.grid_columnconfigure(1, weight=1)
+        main_frame.grid_rowconfigure(1, weight=1)
+
+
+    # =========== FUNÇÕES TREEVIEW =========== #
+    def _consultar_contas(self):
+        """Consulta unindo as tabelas de contas (INR) e CCI com um LEFT JOIN."""
+
+        conn = self.db_manager.conn
+        cursor = conn.cursor()
+
+        sac = self.sac_var.get().strip()
+        mov = self.conta_mov_var.get().strip()
+        esp = self.conta_esp_var.get().strip()
+        cci = self.cci_var.get().strip()
+
+        # O JOIN assegura que mesmo SACs sem CCI aparecerão
+        query = """
+            SELECT i.cd_sac, i.conta_movimento, i.conta_espelho, c.cd_cci
+            FROM liq.RELACAO_CLIENTES_INR i
+            LEFT JOIN relacao_clientes_cci c ON i.cd_sac = c.cd_sac
+            WHERE 1=1
+        """
+
+        if sac: query += f" AND i.cd_sac LIKE '%{sac}%'"
+        if mov: query += f" AND i.conta_movimento LIKE '%{mov}%'"
+        if esp: query += f" AND i.conta_espelho LIKE '%{esp}%'"
+        if cci: query += f" AND c.cd_cci LIKE '%{cci}%'"
+
+        cursor.execute(query)
+        registros = cursor.fetchall()
+
+        # limpa treeview
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        # insere registros
+        for index, (rsac, rconta_mov, rconta_esp, rcci) in enumerate(registros):
+            tag = 'par' if index % 2 == 0 else 'impar'
+            
+            rsac_view = rsac if rsac else ""
+            rconta_mov_view = rconta_mov if rconta_mov else ""
+            rconta_esp_view = rconta_esp if rconta_esp else ""
+            rcci_view = rcci if rcci else ""
+            
+            self.tree.insert("", "end", values=(rsac_view, rconta_mov_view, rconta_esp_view, rcci_view), tags=(tag,))
+
+
+    def _alterar_dados(self):
+        selecionado = self.tree.selection()
+        if not selecionado:
+            return
+
+        item = self.tree.item(selecionado[0], "values")
+        sac_atual, conta_mov_atual, conta_esp_atual, cci_atual = item
+
+        # --- Janela pop-up de edição ---
+        edit_window = ctk.CTkToplevel(self)
+        edit_window.title("Editar Registro")
+        edit_window.grab_set() 
+        edit_window.focus_force() 
+
+        ctk.CTkLabel(edit_window, text="SAC").grid(row=0, column=0, padx=10, pady=5)
+        sac_entry = ctk.CTkEntry(edit_window)
+        sac_entry.insert(0, sac_atual)
+        sac_entry.grid(row=0, column=1, padx=10, pady=5)
+
+        ctk.CTkLabel(edit_window, text="Conta Movimento").grid(row=1, column=0, padx=10, pady=5)
+        conta_mov_entry = ctk.CTkEntry(edit_window)
+        conta_mov_entry.insert(0, conta_mov_atual if conta_mov_atual not in ("None", "") else "")
+        conta_mov_entry.grid(row=1, column=1, padx=10, pady=5)
+
+        ctk.CTkLabel(edit_window, text="Conta Espelho").grid(row=2, column=0, padx=10, pady=5)
+        conta_esp_entry = ctk.CTkEntry(edit_window)
+        conta_esp_entry.insert(0, conta_esp_atual if conta_esp_atual not in ("None", "") else "")
+        conta_esp_entry.grid(row=2, column=1, padx=10, pady=5)
+
+        ctk.CTkLabel(edit_window, text="CCI").grid(row=3, column=0, padx=10, pady=5)
+        cci_entry = ctk.CTkEntry(edit_window)
+        cci_entry.insert(0, cci_atual if cci_atual not in ("None", "") else "")
+        cci_entry.grid(row=3, column=1, padx=10, pady=5)
+
+        def salvar():
+            novo_sac = sac_entry.get().strip()
+            novo_conta_mov = conta_mov_entry.get()
+            nova_conta_esp = conta_esp_entry.get()
+            novo_cci = cci_entry.get().strip()
+
+            if not novo_sac:
+                messagebox.showwarning("Aviso", "O campo SAC não pode ficar vazio.", parent=edit_window)
+                return
+
+            conta_mov_formatada = None
+            conta_esp_formatada = None
+
+            # Validação
+            conta_mov_limpa = novo_conta_mov.replace('/', '').replace('-', '').strip()
+            if conta_mov_limpa:
+                if len(conta_mov_limpa) != 10 or not conta_mov_limpa.isdigit():
+                    messagebox.showwarning("Aviso", "A Conta Movimento deve conter exatamente 10 números.", parent=edit_window)
+                    return
+                conta_mov_formatada = f"{conta_mov_limpa[:4]}/{conta_mov_limpa[4:9]}-{conta_mov_limpa[-1]}"
+
+            conta_esp_limpa = nova_conta_esp.replace('/', '').replace('-', '').strip()
+            if conta_esp_limpa:
+                if len(conta_esp_limpa) != 10 or not conta_esp_limpa.isdigit():
+                    messagebox.showwarning("Aviso", "A Conta Espelho deve conter exatamente 10 números.", parent=edit_window)
+                    return
+                conta_esp_formatada = f"{conta_esp_limpa[:4]}/{conta_esp_limpa[4:9]}-{conta_esp_limpa[-1]}"
+
+            conn = self.db_manager.conn
+            cursor = conn.cursor()
+
+            try:
+                # 1. Atualizar Tabela INR (Pai)
+                set_clauses_inr = ["cd_sac = ?"]
+                params_inr = [novo_sac]
+
+                if conta_mov_formatada:
+                    set_clauses_inr.append("conta_movimento = ?")
+                    params_inr.append(conta_mov_formatada)
+                else:
+                    set_clauses_inr.append("conta_movimento = NULL")
+
+                if conta_esp_formatada:
+                    set_clauses_inr.append("conta_espelho = ?")
+                    params_inr.append(conta_esp_formatada)
+                else:
+                    set_clauses_inr.append("conta_espelho = NULL")
+
+                params_inr.append(sac_atual)
+
+                query_inr = f"""
+                    UPDATE liq.RELACAO_CLIENTES_INR
+                    SET {', '.join(set_clauses_inr)}
+                    WHERE cd_sac = ?
+                """
+                cursor.execute(query_inr, tuple(params_inr))
+
+                # 2. Atualizar Tabela CCI (Filha)
+                cursor.execute("SELECT COUNT(*) FROM relacao_clientes_cci WHERE cd_sac = ?", novo_sac)
+                cci_existe = cursor.fetchone()[0] > 0
+
+                if novo_cci:
+                    if cci_existe:
+                        cursor.execute("UPDATE relacao_clientes_cci SET cd_cci = ? WHERE cd_sac = ?", (novo_cci, novo_sac))
+                    else:
+                        cursor.execute("INSERT INTO relacao_clientes_cci (cd_sac, cd_cci) VALUES (?, ?)", (novo_sac, novo_cci))
+                else:
+                    # Se esvaziou o campo CCI, deletamos a relação na tabela filha
+                    if cci_existe:
+                        cursor.execute("DELETE FROM relacao_clientes_cci WHERE cd_sac = ?", novo_sac)
+
+                conn.commit()
+
+                # Atualiza treeview e fecha
+                self.tree.item(selecionado[0], values=(novo_sac, conta_mov_formatada or "", conta_esp_formatada or "", novo_cci))
+                messagebox.showinfo("Sucesso", "Registro alterado com sucesso!", parent=edit_window)
+                edit_window.destroy()
+            
+            except Exception as e:
+                self.logger.log(f"ERRO ao alterar registro {sac_atual}: {e}")
+                messagebox.showerror("Erro", f"Ocorreu um erro ao alterar: {e}", parent=edit_window)
+
+        def deletar():
+            if messagebox.askyesno("Confirmar", "Tem certeza que deseja deletar este registro de ambas as tabelas?", parent=edit_window):
+                conn = self.db_manager.conn
+                cursor = conn.cursor()
+
+                try:
+                    # Deleta da filha primeiro para respeitar integridade referencial
+                    cursor.execute("DELETE FROM relacao_clientes_cci WHERE cd_sac = ?", sac_atual)
+                    # Depois deleta da pai
+                    cursor.execute("DELETE FROM liq.RELACAO_CLIENTES_INR WHERE cd_sac = ?", sac_atual)
+                    conn.commit()
+
+                    self.tree.delete(selecionado[0])
+                    messagebox.showinfo("Sucesso", "Registro deletado com sucesso!", parent=self)
+                    edit_window.destroy()
+                except Exception as e:
+                    self.logger.log(f"ERRO ao deletar registro {sac_atual}: {e}")
+                    messagebox.showerror("Erro", f"Ocorreu um erro ao deletar: {e}", parent=edit_window)
+
+        ctk.CTkButton(edit_window, text="Salvar alteração", command=salvar, fg_color=config.AZUL, hover_color=config.AZUL_HOVER).grid(row=4, column=0, padx=10, pady=15)
+        ctk.CTkButton(edit_window, text="Deletar", command=deletar, fg_color="red").grid(row=4, column=1, padx=10, pady=15)
+
+
+    # ========== FUNÇÕES LÓGICA DE NEGÓCIO ========== #
+    def _inserir_dados(self):
+        edit_window = ctk.CTkToplevel(self)
+        edit_window.title("Novo Registro")
+        edit_window.grab_set() 
+        edit_window.focus_force()
+
+        ctk.CTkLabel(edit_window, text="SAC").grid(row=0, column=0, padx=10, pady=5)
+        sac_entry = ctk.CTkEntry(edit_window)
+        sac_entry.grid(row=0, column=1, padx=10, pady=5)
+
+        ctk.CTkLabel(edit_window, text="Conta Movimento").grid(row=1, column=0, padx=10, pady=5)
+        conta_mov_entry = ctk.CTkEntry(edit_window)
+        conta_mov_entry.grid(row=1, column=1, padx=10, pady=5)
+
+        ctk.CTkLabel(edit_window, text="Conta Espelho").grid(row=2, column=0, padx=10, pady=5)
+        conta_esp_entry = ctk.CTkEntry(edit_window)
+        conta_esp_entry.grid(row=2, column=1, padx=10, pady=5)
+
+        ctk.CTkLabel(edit_window, text="CCI").grid(row=3, column=0, padx=10, pady=5)
+        cci_entry = ctk.CTkEntry(edit_window)
+        cci_entry.grid(row=3, column=1, padx=10, pady=5)
+
+        def salvar():
+            novo_sac = sac_entry.get().strip()
+            novo_conta_mov = conta_mov_entry.get()
+            nova_conta_esp = conta_esp_entry.get()
+            novo_cci = cci_entry.get().strip()
+
+            if not novo_sac:
+                messagebox.showwarning("Aviso", "O campo SAC não pode ficar vazio.", parent=edit_window)
+                return
+
+            conta_mov_formatada = None
+            conta_esp_formatada = None
+
+            conta_mov_limpa = novo_conta_mov.replace('/', '').replace('-', '').strip()
+            if conta_mov_limpa:
+                if len(conta_mov_limpa) != 10 or not conta_mov_limpa.isdigit():
+                    messagebox.showwarning("Aviso", "A Conta Movimento deve conter exatamente 10 números.", parent=edit_window)
+                    return
+                conta_mov_formatada = f"{conta_mov_limpa[:4]}/{conta_mov_limpa[4:9]}-{conta_mov_limpa[-1]}"
+
+            conta_esp_limpa = nova_conta_esp.replace('/', '').replace('-', '').strip()
+            if conta_esp_limpa:
+                if len(conta_esp_limpa) != 10 or not conta_esp_limpa.isdigit():
+                    messagebox.showwarning("Aviso", "A Conta Espelho deve conter exatamente 10 números.", parent=edit_window)
+                    return
+                conta_esp_formatada = f"{conta_esp_limpa[:4]}/{conta_esp_limpa[4:9]}-{conta_esp_limpa[-1]}"
+
+            sucesso = self._inserir_bd(novo_sac, conta_mov_formatada, conta_esp_formatada, novo_cci)
+            if sucesso:
+                messagebox.showinfo("Sucesso", "Registro inserido com sucesso!", parent=edit_window)
+                edit_window.destroy()
+                self._consultar_contas() 
+
+        ctk.CTkButton(edit_window, text="Salvar alteração", command=salvar, fg_color=config.AZUL, hover_color=config.AZUL_HOVER).grid(row=4, column=0, columnspan=2, padx=10, pady=15)
+
+    def _inserir_bd(self, sac, conta_mov_formatada, conta_esp_formatada, cci_formatado):
+        """Insere um novo registro cruzado em relacao_clientes_inr e relacao_clientes_cci.
+        """
+
+        if not self.db_manager or not self.db_manager.is_connected():
+            self.logger.log("ERRO: Não é possível inserir. Sem conexão com o banco de dados.")
+            return False
+
+        try:
+            cursor = self.db_manager.cursor
+
+            # Verifica se já existe na tabela pai (INR)
+            cursor.execute("SELECT COUNT(*) FROM liq.RELACAO_CLIENTES_INR WHERE cd_sac = ?", sac)
+            if cursor.fetchone()[0] > 0:
+                messagebox.showwarning("Aviso", "Este SAC já está registrado. Para adicionar um CCI a ele, utilize o botão 'Alterar'.")
+                return False
+
+            # 1. Inserir na tabela INR primeiro (Independente se o usuário preencheu as contas, o SAC deve existir lá)
+            colunas_inr = ["cd_sac"]
+            valores_inr = ["?"]
+            parametros_inr = [sac]
+
+            if conta_mov_formatada:
+                colunas_inr.append("conta_movimento")
+                valores_inr.append("?")
+                parametros_inr.append(conta_mov_formatada)
+
+            if conta_esp_formatada:
+                colunas_inr.append("conta_espelho")
+                valores_inr.append("?")
+                parametros_inr.append(conta_esp_formatada)
+
+            query_inr = f"""
+                INSERT INTO liq.RELACAO_CLIENTES_INR ({', '.join(colunas_inr)}) 
+                VALUES ({', '.join(valores_inr)})
+            """
+            cursor.execute(query_inr, tuple(parametros_inr))
+
+            # 2. Inserir na tabela CCI se houver dado correspondente
+            if cci_formatado:
+                query_cci = "INSERT INTO relacao_clientes_cci (cd_sac, cd_cci) VALUES (?, ?)"
+                cursor.execute(query_cci, (sac, cci_formatado))
+
+            self.db_manager.conn.commit()
+            return True
+
+        except pyodbc.Error as e:
+            self.logger.log(f"ERRO CRÍTICO ao inserir a conta {sac}: {e}")
+            return False
+        except Exception as e:
+            self.logger.log(f"ERRO INESPERADO ao inserir a conta {sac}: {e}")
+            return False
