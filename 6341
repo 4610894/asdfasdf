@@ -1,1 +1,640 @@
+from tkinter import ttk, messagebox, filedialog
+import customtkinter as ctk
+from logger import Logger
+import config
+import pyodbc
+import pandas as pd
+import os
+import re
+from datetime import timedelta, datetime
+from PIL import Image
+from holidays.countries import Brazil
 
+import random
+
+class BatimentoOM5View(ctk.CTkFrame):
+    def __init__(self, parent):
+        """
+        Inicializa a view de cadastro de eventos.
+        ...
+        """
+        super().__init__(parent, fg_color='transparent')
+
+        # Variáveis para os Cards de Resumo (iniciam com "--")
+        self.val_operacoes = ctk.StringVar(value="--")
+        self.val_batidas = ctk.StringVar(value="--")
+        self.val_nao_encontradas = ctk.StringVar(value="--")
+        self.val_incorretas = ctk.StringVar(value="--")
+
+        self._create_widgets()
+
+    def _create_widgets(self):
+        """Cria e organiza os elementos da interface"""
+
+        # --- CABEÇALHO ---
+        header_frame = ctk.CTkFrame(self, fg_color=config.AZUL, height=80)
+        header_frame.pack(fill='x', pady=(20, 10))
+        header_frame.pack_propagate(False)
+
+        left_container = ctk.CTkFrame(header_frame, fg_color='transparent')
+        left_container.pack(side='left', padx=20, pady=0)
+
+        # Logo
+        logo_img = ctk.CTkImage(light_image=Image.open("intern/logo_itau.png"), size=(60, 60))
+        logo_label = ctk.CTkLabel(left_container, image=logo_img, text='', width=40, height=40)
+        logo_label.pack(side='left')
+
+        # Título
+        title_label = ctk.CTkLabel(header_frame, text='Batimento OM5', font=('Arial', 28, 'bold'), text_color='white')
+        title_label.pack(side='left', anchor='w', padx=(0, 0))
+
+
+        # --- LAYOUT PRINCIPAL ---
+        main_frame = ctk.CTkFrame(self, fg_color='transparent')
+        main_frame.pack(side="top", fill="both", expand=True, padx=20, pady=(10, 0))
+
+        # --- CARDS DE RESUMO (Substituindo o antigo form_frame) ---
+        cards_frame = ctk.CTkFrame(main_frame, fg_color='transparent')
+        cards_frame.grid(row=0, column=0, pady=(0, 20), sticky='n')
+
+        # Cores (usando um amarelo mais escuro/mostarda para não sumir no fundo branco)
+        cor_borda = config.AZUL
+        
+        # Criando os 4 cards lado a lado
+        self._criar_card(cards_frame, "Operações", self.val_operacoes, "black", cor_borda).grid(row=0, column=0, padx=15)
+        self._criar_card(cards_frame, "Batidas", self.val_batidas, "#009900", cor_borda).grid(row=0, column=1, padx=15) # Verde
+        self._criar_card(cards_frame, "não encontradas", self.val_nao_encontradas, "#D4A017", cor_borda).grid(row=0, column=2, padx=15) # Amarelo escuro
+        self._criar_card(cards_frame, "incorretas", self.val_incorretas, "red", cor_borda).grid(row=0, column=3, padx=15) # Vermelho
+
+        # --- LOG E TREEVIEW ---
+        left_frame = ctk.CTkFrame(main_frame, fg_color='transparent')
+        left_frame.grid(row=1, column=0, sticky='nsew', padx=20)
+
+        # 1. Adicionadas as novas colunas
+        colunas = ('Conta Débito', 'CNPJ Débito', 'Conta Crédito', 'CNPJ Crédito', 'Status', 'Observação', 'Aprov. Coord.', 'Aprov. Gerente')
+        self.tree = ttk.Treeview(left_frame, columns=colunas, show='headings', height=18)
+        
+        for col in colunas:
+            self.tree.heading(col, text=col)
+            
+            # Ajuste das larguras para acomodar os "checkboxes"
+            if col == "Observação":
+                self.tree.column(col, width=200, anchor='center')
+            elif col in ['Aprov. Coord.', 'Aprov. Gerente']:
+                self.tree.column(col, width=90, anchor='center')
+            else:
+                self.tree.column(col, width=100, anchor='center')
+        
+        # Configuração das cores das linhas zebradas... (mantenha as suas tags originais)
+        self.tree.tag_configure('impar', background='white')
+        self.tree.tag_configure('par', background='#e8e8e8')
+        self.tree.tag_configure('incorreta_impar', background='#ffcccc')
+        self.tree.tag_configure('incorreta_par', background='#ffb3b3')
+        self.tree.tag_configure('nao_encontrada_impar', background='#fff3cd')
+        self.tree.tag_configure('nao_encontrada_par', background='#ffe69c')
+
+        self.tree.pack(fill='both', expand=True)
+
+        # 2. EVENTO DE CLIQUE: Mapeia soltar o botão esquerdo do mouse na tabela
+        self.tree.bind('<Double-1>', self._ao_clicar_na_tabela)
+
+        # --- BOTÕES FINAIS ---
+        final_frame = ctk.CTkFrame(main_frame, fg_color='transparent')
+        final_frame.grid(row=2, column=0, pady=10, sticky='n')
+
+        ctk.CTkButton(final_frame, text="Consultar lote", command=self._carregar_arquivo, width=150, fg_color=config.AZUL, hover_color=config.AZUL_HOVER).grid(row=0, column=0, padx=10, pady=10)
+        ctk.CTkButton(final_frame, text="Consultar contas", command=self._interface_consulta, width=150, fg_color=config.AZUL, hover_color=config.AZUL_HOVER).grid(row=0, column=1, padx=10, pady=10)
+        # ctk.CTkButton(final_frame, text="Inserir", command=self._inserir_dados, width=150, fg_color=config.AZUL, hover_color=config.AZUL_HOVER).grid(row=0, column=2, padx=10, pady=10)
+
+        # Configura o redimensionamento do grid principal
+        main_frame.grid_columnconfigure(0, weight=1)
+        main_frame.grid_rowconfigure(1, weight=1)
+
+    def _criar_card(self, parent, titulo, variavel, cor_valor, cor_borda):
+        """
+        Método auxiliar para criar os cards de resumo de forma padronizada.
+        """
+        # Cria a caixinha com borda e fundo branco (ou a cor do seu tema)
+        card = ctk.CTkFrame(parent, border_width=2, border_color=cor_borda, fg_color="white", corner_radius=15, width=160, height=80)
+        card.pack_propagate(False) # Impede que o frame encolha para o tamanho dos textos
+        
+        # Label do Valor (ex: --, 10, 50) com a cor específica
+        lbl_valor = ctk.CTkLabel(card, textvariable=variavel, font=("Arial", 26, "bold"), text_color=cor_valor)
+        lbl_valor.pack(pady=(10, 0))
+        
+        # Label do Título (ex: Operações, Batidas)
+        lbl_titulo = ctk.CTkLabel(card, text=titulo, font=("Arial", 12), text_color="black")
+        lbl_titulo.pack(pady=(0, 5))
+        
+        return card
+
+
+
+    def _carregar_arquivo(self):
+        """
+        Abre o explorador de arquivos para o usuário selecionar uma planilha
+        e a converte em um DataFrame do Pandas.
+        """
+        # Abre a janela para buscar o arquivo
+        caminho_arquivo = filedialog.askopenfilename(
+            title="Selecione o arquivo de operações",
+            filetypes=[("Arquivos Excel", "*.xlsx *.xls"),
+                        ("Arquivos CSV", "*.csv"),
+                        ("Todos os arquivos", "*.*")])
+
+        # Se o usuário fechar a janela de busca sem escolher nada, encerra a função
+        if not caminho_arquivo:
+            return
+
+        try:
+            # Lê o arquivo dependendo da extensão
+            if caminho_arquivo.endswith('.csv'):
+                df = pd.read_csv(caminho_arquivo, sep=';', encoding='utf-8') 
+            else:
+                df = pd.read_excel(caminho_arquivo)
+
+            nome_do_arquivo = os.path.basename(caminho_arquivo)
+            self._processar_e_comparar_dados(df, nome_do_arquivo)
+
+        except Exception as e:
+            # Se der erro (arquivo corrompido, formato errado, etc), avisa o usuário
+            messagebox.showerror("Erro", f"Não foi possível ler o arquivo.\nErro: {str(e)}")
+            return None
+
+    def _obter_base_ficticia(self):
+        """
+        Simula uma consulta ao banco de dados.
+        Retorna um dicionário onde a chave é 'agência/conta-dac' e o valor é o 'cnpj' (formatados).
+        """
+        return {
+            '0123/01234-1': '00000000012345', # Certa
+            '0321/05432-2': '00000000054321', # Certa
+            '0001/00001-1': '00000000000001', # Certa
+            '0999/09999-9': '00000000099999', # Certa
+            # A conta 0777/07777-7 propositalmente não está aqui para testar o "Não Encontrada"
+        }
+
+    def _processar_e_comparar_dados(self, df_raw, nome_arquivo):
+        """
+        Aplica o tratamento no DataFrame, compara com a base real (fictícia),
+        ordena as prioridades e atualiza o Treeview e os Cards de resumo.
+        """
+        # 1. Tratamento de dados original
+        df = df_raw.copy()
+        df['Agência'] = df['Agência'].astype(str).str.zfill(4)
+        df['Conta'] = df['Conta'].astype(str).str.zfill(5)
+        df['Dac'] = df['Dac'].astype(str).str.zfill(1)
+        df['CPF/CNPJ'] = df['CPF/CNPJ'].astype(str).str.zfill(14)
+
+        df['Agência.1'] = df['Agência.1'].astype(str).str.zfill(4)
+        df['Conta.1'] = df['Conta.1'].astype(str).str.zfill(5)
+        df['Dac.1'] = df['Dac.1'].astype(str).str.zfill(1)
+        df['CPF/CNPJ.1'] = df['CPF/CNPJ.1'].astype(str).str.zfill(14)
+
+        df['conta débito'] = df['Agência'] + '/' + df['Conta'] + '-' + df['Dac']
+        df['conta crédito'] = df['Agência.1'] + '/' + df['Conta.1'] + '-' + df['Dac.1']
+
+        df = df[['conta débito', 'CPF/CNPJ', 'conta crédito', 'CPF/CNPJ.1', 'Valor']].rename(
+            columns={
+                'CPF/CNPJ': 'cnpj débito',
+                'CPF/CNPJ.1': 'cnpj crédito',
+                'Valor': 'valor'
+            }
+        )
+
+        # 2. Obter a base do banco de dados simulada
+        #db_real = self._obter_base_real()
+        db_real = self._obter_base_ficticia()
+
+        # 3. Variáveis de controle
+        total_operacoes = len(df)
+        qtd_batidas = 0
+        qtd_nao_encontradas = 0
+        qtd_incorretas = 0
+        
+        # Lista temporária para armazenar e ordenar os dados antes da interface
+        linhas_processadas = []
+        dados_para_banco = []
+
+        # 4. Lógica de Comparação Linha a Linha
+        for index, row in df.iterrows():
+            c_debito = row['conta débito']
+            cnpj_debito = row['cnpj débito']
+            c_credito = row['conta crédito']
+            cnpj_credito = row['cnpj crédito']
+
+            # Validar Débito
+            status_deb = "OK"
+            if c_debito not in db_real:
+                status_deb = "NÃO ENCONTRADA"
+            elif db_real[c_debito] != cnpj_debito:
+                status_deb = "INCORRETA"
+
+            # Validar Crédito
+            status_cred = "OK"
+            if c_credito not in db_real:
+                status_cred = "NÃO ENCONTRADA"
+            elif db_real[c_credito] != cnpj_credito:
+                status_cred = "INCORRETA"
+
+            # Definir o Status Final, Cor e Prioridade de Ordenação
+            if status_deb == "OK" and status_cred == "OK":
+                status_final = "✅ Batida"
+                observacao = "OK"
+                qtd_batidas += 1
+                tag_visual = 'normal' # Marcador temporário para o zebrado
+                prioridade = 3
+                
+            elif "NÃO ENCONTRADA" in status_deb or "NÃO ENCONTRADA" in status_cred:
+                status_final = "⚠️ Não encontrada"
+                observacao = f"D: {status_deb} | C: {status_cred}"
+                qtd_nao_encontradas += 1
+                tag_visual = 'nao_encontrada'
+                prioridade = 2
+
+                # ADICIONADO: Guarda a informação do erro para gravar no banco depois
+                dados_para_banco.append({
+                    'conta_debito': c_debito,
+                    'cnpj_debito': cnpj_debito,
+                    'conta_credito': c_credito,
+                    'cnpj_credito': cnpj_credito,
+                    'status': status_final.replace('✅ ', '').replace('⚠️ ', '').replace('❌ ', ''), 
+                    'observacao': observacao
+                })
+            else:
+                status_final = "❌ Incorreta"
+                observacao = f"D: {status_deb} | C: {status_cred}"
+                qtd_incorretas += 1
+                tag_visual = 'incorreta'
+                prioridade = 1
+
+                # ADICIONADO: Guarda a informação do erro para gravar no banco depois
+                dados_para_banco.append({
+                    'conta_debito': c_debito,
+                    'cnpj_debito': cnpj_debito,
+                    'conta_credito': c_credito,
+                    'cnpj_credito': cnpj_credito,
+                    'status': status_final.replace('✅ ', '').replace('⚠️ ', '').replace('❌ ', ''), 
+                    'observacao': observacao
+                })
+
+            # Salva os dados na lista em vez de jogar direto na tela
+            linhas_processadas.append({
+                'valores': (c_debito, cnpj_debito, c_credito, cnpj_credito, status_final, observacao, '☐', '☐'),
+                'tag_visual': tag_visual,
+                'prioridade': prioridade
+            })
+
+        # 5. Ordena a lista usando a prioridade (1 aparece primeiro, depois 2, depois 3)
+        linhas_processadas.sort(key=lambda x: x['prioridade'])
+
+        # 6. Limpa o Treeview antes de inserir a nova remessa de dados
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        # 7. Insere as linhas ordenadas no Treeview com o zebrado dinâmico
+        for index, item in enumerate(linhas_processadas):
+            tag_base = item['tag_visual']
+            
+            # Verifica se a linha final na tabela é par ou ímpar
+            sufixo = '_par' if index % 2 == 0 else '_impar'
+            
+            # Define a tag final baseada no status
+            if tag_base == 'normal':
+                # Se for normal, usa apenas 'par' ou 'impar'
+                tag_final = 'par' if index % 2 == 0 else 'impar'
+            else:
+                # Se for erro, junta a base com o sufixo (ex: 'incorreta_par', 'nao_encontrada_impar')
+                tag_final = f"{tag_base}{sufixo}"
+                
+            self.tree.insert('', 'end', values=item['valores'], tags=(tag_final,))
+
+        # 8. Atualiza as caixas superiores (Cards)
+        self.val_operacoes.set(str(total_operacoes))
+        self.val_batidas.set(str(qtd_batidas))
+        self.val_nao_encontradas.set(str(qtd_nao_encontradas))
+        self.val_incorretas.set(str(qtd_incorretas))
+
+        # ADICIONADO: Chamada final para salvar tudo no banco de dados
+        self._registrar_log(
+            nome_arquivo=nome_arquivo,
+            total=total_operacoes,
+            batidas=qtd_batidas,
+            nao_encontradas=qtd_nao_encontradas,
+            incorretas=qtd_incorretas,
+            linhas_completa=dados_para_banco
+        )
+
+    def _registrar_log(self, nome_arquivo, total, batidas, nao_encontradas, incorretas, linhas_completas):
+        """
+        Registra o log do lote (macro) e todas as linhas (micro) no banco.
+        """
+        data_hora_atual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        id_usuario = getattr(self, 'usuario_logado', 'SISTEMA')
+        cursor = self.db_manager.cursor
+
+        try:
+            # 1. Macro (igual ao anterior)
+            query_macro = """
+                INSERT INTO log_lotes 
+                (nome_arquivo, id_usuario, total_operacoes, qtd_batidas, 
+                 qtd_nao_encontradas, qtd_incorretas, data_hora_upload)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """
+            cursor.execute(query_macro, (nome_arquivo, id_usuario, total, batidas, nao_encontradas, incorretas, data_hora_atual))
+            
+            id_lote_gerado = cursor.fetchone()[0]
+            self.id_lote_atual = id_lote_gerado
+
+            # 2. Micro (AGORA COM OS CNPJS E INSERINDO TUDO)
+            if linhas_completas:
+                query_micro = """
+                    INSERT INTO log_detalhes 
+                    (id_lote, conta_debito, cnpj_debito, conta_credito, cnpj_credito, status_erro, observacao)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """
+                
+                valores_micro = [
+                    (id_lote_gerado, linha['conta_debito'], linha['cnpj_debito'], linha['conta_credito'], linha['cnpj_credito'], linha['status'], linha['observacao'])
+                    for linha in linhas_completas
+                ]
+                
+                cursor.executemany(query_micro, valores_micro)
+
+            self.db_manager.commit()
+            
+        except Exception as e:
+            self.db_manager.rollback()
+            print(f"Erro ao salvar log no banco de dados: {e}")
+
+    def _obter_base_real(self):
+        """
+        Conecta no AWS Athena, consulta a base de contas e CNPJs
+        e retorna um dicionário no formato: {'0123/01234-1': '00000000012345'}
+        """
+        # --- CONFIGURAÇÕES DA AWS ---
+        # Substitua pelas informações do seu ambiente
+        nome_da_regiao = "sa-east-1" # Ex: São Paulo
+        bucket_resultados = "s3://seu-bucket-de-query-results-athena/" 
+        
+        try:
+            # Estabelece a conexão com o Athena
+            # Ele vai buscar automaticamente suas credenciais configuradas na máquina (AWS CLI)
+            # conn = connect(s3_staging_dir=bucket_resultados, region_name=nome_da_regiao)
+            conn = None
+            
+            # --- SUA QUERY SQL ---
+            # Ajuste 'seu_database.sua_tabela' e o nome exato das colunas
+            query = """
+                SELECT 
+                    agencia, 
+                    conta, 
+                    dac, 
+                    cnpj 
+                FROM seu_database.sua_tabela_de_contas
+            """
+            
+            # Executa a query e joga o resultado direto em um DataFrame do Pandas!
+            df_athena = pd.read_sql(query, conn)
+            
+            # --- TRANSFORMAR NO DICIONÁRIO ---
+            base_real = {}
+            for index, row in df_athena.iterrows():
+                # Padronizando os dados do banco da mesma forma que padronizamos o Excel
+                ag = str(row['agencia']).zfill(4)
+                ct = str(row['conta']).zfill(5)
+                dc = str(row['dac']).zfill(1)
+                cnpj = str(row['cnpj']).zfill(14)
+                
+                # Monta a chave (ex: 0123/01234-1)
+                conta_formatada = f"{ag}/{ct}-{dc}"
+                
+                # Salva no dicionário
+                base_real[conta_formatada] = cnpj
+                
+            return base_real
+            
+        except Exception as e:
+            print(f"Erro ao conectar ou consultar o Athena: {e}")
+            # Retorna dicionário vazio em caso de erro para não quebrar o app inteiro
+            return {}
+
+    def _interface_consulta(self):
+        # 1. Configuração da nova janela (Toplevel)
+        nova_janela = ctk.CTkToplevel(self)
+        nova_janela.title("Nova Consulta e Configurações")
+        nova_janela.geometry("350x450") 
+        nova_janela.grab_set() 
+        nova_janela.focus_force()
+
+        # 2. Criação do sistema de abas (Cores aplicadas na seleção das abas para manter a consistência)
+        tabview = ctk.CTkTabview(nova_janela, 
+                                 segmented_button_selected_color=config.AZUL,
+                                 segmented_button_selected_hover_color=config.AZUL_HOVER,
+                                 segmented_button_fg_color=config.AZUL,
+                                 segmented_button_unselected_color=config.AZUL,
+                                 segmented_button_unselected_hover_color=config.AZUL_HOVER)
+        tabview.pack(padx=20, pady=20, fill="both", expand=True)
+
+        # Adicionando as duas abas
+        tabview.add("Consulta")
+        tabview.add("Credenciais AWS")
+
+        # ==========================================
+        # ABA 1: CONSULTA
+        # ==========================================
+        aba_consulta = tabview.tab("Consulta")
+
+        ctk.CTkLabel(aba_consulta, text="Conta:", anchor="w", width=250).pack(pady=(20, 0))
+        conta_entry = ctk.CTkEntry(aba_consulta, width=250, border_color=config.AZUL)
+        conta_entry.pack(pady=(5, 15))
+
+        ctk.CTkLabel(aba_consulta, text="CNPJ:", anchor="w", width=250).pack(pady=(10, 0))
+        cnpj_entry = ctk.CTkEntry(aba_consulta, width=250, state="disabled", border_color=config.AZUL)
+        cnpj_entry.pack(pady=(5, 30))
+
+        btn_consultar = ctk.CTkButton(aba_consulta, text="Consultar", width=125, 
+                                      fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
+        btn_consultar.pack(pady=10)
+
+
+        # ==========================================
+        # ABA 2: CREDENCIAIS AWS
+        # ==========================================
+        aba_aws = tabview.tab("Credenciais AWS")
+
+        ctk.CTkLabel(aba_aws, text="AWS Access Key ID:", anchor="w", width=250).pack(pady=(10, 0))
+        aws_key_entry = ctk.CTkEntry(aba_aws, width=250, border_color=config.AZUL)
+        aws_key_entry.pack(pady=(5, 10))
+
+        ctk.CTkLabel(aba_aws, text="AWS Secret Access Key:", anchor="w", width=250).pack(pady=(10, 0))
+        aws_secret_entry = ctk.CTkEntry(aba_aws, width=250, show="*", border_color=config.AZUL)
+        aws_secret_entry.pack(pady=(5, 10))
+
+        ctk.CTkLabel(aba_aws, text="AWS Session Token:", anchor="w", width=250).pack(pady=(10, 0))
+        aws_token_entry = ctk.CTkEntry(aba_aws, width=250, border_color=config.AZUL)
+        aws_token_entry.pack(pady=(5, 20))
+
+        # Frame transparente apenas para agrupar os botões lado a lado no centro
+        frame_botoes = ctk.CTkFrame(aba_aws, fg_color="transparent")
+        frame_botoes.pack(pady=10)
+
+        # Botões dentro do frame, com as cores personalizadas
+        btn_atualizar = ctk.CTkButton(frame_botoes, text="Atualizar", width=125,
+                                      fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
+        btn_atualizar.pack(side="left", padx=10)
+
+        btn_site_aws = ctk.CTkButton(frame_botoes, text="Site da AWS", width=125,
+                                     fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
+        btn_site_aws.pack(side="left", padx=10)
+
+    def _ao_clicar_na_tabela(self, event):
+        """
+        Captura o duplo clique na Treeview. Alterna o checkbox e atualiza o banco de dados.
+        """
+        regiao = self.tree.identify("region", event.x, event.y)
+        if regiao != "cell":
+            return
+
+        row_id = self.tree.identify_row(event.y)
+        column_id = self.tree.identify_column(event.x)
+
+        # '#7' = Coordenador, '#8' = Gerente
+        if column_id in ('#7', '#8'):
+            valores_atuais = list(self.tree.item(row_id, 'values'))
+            indice_coluna = int(column_id.replace('#', '')) - 1
+
+            valor_atual = valores_atuais[indice_coluna]
+            novo_valor = '☑' if valor_atual == '☐' else '☐'
+
+            # Atualiza a lista e insere de volta na interface
+            valores_atuais[indice_coluna] = novo_valor
+            self.tree.item(row_id, values=valores_atuais)
+
+            # --- LÓGICA DE ATUALIZAÇÃO DO BANCO DE DADOS ---
+            
+            # Coleta as chaves para encontrar a linha no banco
+            conta_deb = valores_atuais[0]
+            conta_cred = valores_atuais[2]
+            
+            # Define os valores para o banco: 1 (True) se marcou, 0 (False) se desmarcou
+            is_checked = 1 if novo_valor == '☑' else 0
+            # Se foi marcado, pega a data/hora atual. Se desmarcou, envia None (vira NULL no banco)
+            data_hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S") if is_checked else None
+
+            # Verifica se temos o ID do lote gerado
+            id_lote = getattr(self, 'id_lote_atual', None)
+            
+            if id_lote is None:
+                print("Aviso: ID do lote atual não encontrado. A atualização não foi salva no banco.")
+                return
+
+            try:
+                cursor = self.db_manager.cursor
+                
+                if column_id == '#7': # Coordenador
+                    query = """
+                        UPDATE log_detalhes 
+                        SET aprov_coord = ?, data_aprov_coord = ?
+                        WHERE id_lote = ? AND conta_debito = ? AND conta_credito = ?
+                    """
+                else: # Gerente
+                    query = """
+                        UPDATE log_detalhes 
+                        SET aprov_geren = ?, data_aprov_geren = ?
+                        WHERE id_lote = ? AND conta_debito = ? AND conta_credito = ?
+                    """
+                
+                cursor.execute(query, (is_checked, data_hora, id_lote, conta_deb, conta_cred))
+                self.db_manager.commit()
+                
+            except Exception as e:
+                print(f"Erro ao atualizar aprovação no banco de dados: {e}")
+                self.db_manager.rollback()
+
+    def _carregar_ultimo_lote_hoje(self):
+        """
+        Busca o último id_lote salvo com a data de hoje.
+        Carrega todos os detalhes no Treeview (incluindo CNPJs) e recarrega os checkboxes.
+        """
+        cursor = self.db_manager.cursor
+        data_hoje = datetime.now().strftime("%Y-%m-%d")
+
+        try:
+            # 1. Busca o último lote de hoje na tabela macro
+            query_lote = """
+                SELECT id_lote, total_operacoes, qtd_batidas, qtd_nao_encontradas, qtd_incorretas 
+                FROM log_lotes 
+                WHERE data_hora_upload LIKE ? 
+                ORDER BY id_lote DESC
+            """
+            cursor.execute(query_lote, (f"{data_hoje}%",))
+            lote_info = cursor.fetchone()
+
+            if not lote_info:
+                return
+
+            self.id_lote_atual = lote_info[0]
+
+            # Atualiza os Cards Superiores
+            self.val_operacoes.set(str(lote_info[1]))
+            self.val_batidas.set(str(lote_info[2]))
+            self.val_nao_encontradas.set(str(lote_info[3]))
+            self.val_incorretas.set(str(lote_info[4]))
+
+            # 2. Busca os dados da tabela micro (AGORA COM OS CNPJS INCLUÍDOS)
+            query_detalhes = """
+                SELECT 
+                    conta_debito, cnpj_debito, 
+                    conta_credito, cnpj_credito, 
+                    status_erro, observacao, 
+                    aprov_coord, aprov_geren
+                FROM log_detalhes
+                WHERE id_lote = ?
+            """
+            cursor.execute(query_detalhes, (self.id_lote_atual,))
+            linhas_banco = cursor.fetchall()
+
+            # Limpa a Treeview atual
+            for item in self.tree.get_children():
+                self.tree.delete(item)
+
+            # 3. Insere os dados recuperados na interface
+            for index, row in enumerate(linhas_banco):
+                c_debito = row[0]
+                cnpj_debito = row[1]
+                c_credito = row[2]
+                cnpj_credito = row[3]
+                status = row[4]
+                observacao = row[5]
+                
+                # Traduz o valor do banco (1/True = Marcado, 0/False/None = Vazio)
+                check_coord = '☑' if row[6] else '☐'
+                check_geren = '☑' if row[7] else '☐'
+
+                # Recria a lógica visual de zebrado baseado no status
+                status_upper = str(status).upper()
+                
+                # Garante que o emoji não seja duplicado caso já venha do banco
+                if "NÃO ENCONTRADA" in status_upper:
+                    tag_base = 'nao_encontrada'
+                    status_final = f"⚠️ {status}" if "⚠️" not in status else status
+                elif "INCORRETA" in status_upper:
+                    tag_base = 'incorreta'
+                    status_final = f"❌ {status}" if "❌" not in status else status
+                else:
+                    tag_base = 'normal'
+                    status_final = f"✅ {status}" if "✅" not in status else status
+
+                sufixo = '_par' if index % 2 == 0 else '_impar'
+                
+                if tag_base == 'normal':
+                    tag_final = 'par' if index % 2 == 0 else 'impar'
+                else:
+                    tag_final = f"{tag_base}{sufixo}"
+
+                valores = (c_debito, cnpj_debito, c_credito, cnpj_credito, status_final, observacao, check_coord, check_geren)
+                self.tree.insert('', 'end', values=valores, tags=(tag_final,))
+
+        except Exception as e:
+            print(f"Erro ao carregar o lote do dia: {e}")
