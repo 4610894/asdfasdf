@@ -10,7 +10,8 @@ from datetime import timedelta, datetime
 from PIL import Image
 from holidays.countries import Brazil
 
-import random
+import subprocess
+import webbrowser
 
 class BatimentoOM5View(ctk.CTkFrame):
     def __init__(self, parent):
@@ -70,8 +71,8 @@ class BatimentoOM5View(ctk.CTkFrame):
         left_frame = ctk.CTkFrame(main_frame, fg_color='transparent')
         left_frame.grid(row=1, column=0, sticky='nsew', padx=20)
 
-        # 1. Adicionadas as novas colunas
-        colunas = ('Conta Débito', 'CNPJ Débito', 'Conta Crédito', 'CNPJ Crédito', 'Status', 'Observação', 'Aprov. Coord.', 'Aprov. Gerente')
+        # 1. Adicionadas as novas colunas (incluindo 'Valor')
+        colunas = ('Conta Débito', 'CNPJ Débito', 'Conta Crédito', 'CNPJ Crédito', 'Valor', 'Status', 'Observação', 'Aprov. Coord.', 'Aprov. Gerente')
         self.tree = ttk.Treeview(left_frame, columns=colunas, show='headings', height=18)
         
         for col in colunas:
@@ -222,6 +223,7 @@ class BatimentoOM5View(ctk.CTkFrame):
             cnpj_debito = row['cnpj débito']
             c_credito = row['conta crédito']
             cnpj_credito = row['cnpj crédito']
+            valor = row['valor']
 
             # Validar Débito
             status_deb = "OK"
@@ -244,6 +246,16 @@ class BatimentoOM5View(ctk.CTkFrame):
                 qtd_batidas += 1
                 tag_visual = 'normal' # Marcador temporário para o zebrado
                 prioridade = 3
+
+                dados_para_banco.append({
+                    'conta_debito': c_debito,
+                    'cnpj_debito': cnpj_debito,
+                    'conta_credito': c_credito,
+                    'cnpj_credito': cnpj_credito,
+                    'valor': valor,
+                    'status': 'Batida', 
+                    'observacao': observacao
+                })
                 
             elif "NÃO ENCONTRADA" in status_deb or "NÃO ENCONTRADA" in status_cred:
                 status_final = "⚠️ Não encontrada"
@@ -258,6 +270,7 @@ class BatimentoOM5View(ctk.CTkFrame):
                     'cnpj_debito': cnpj_debito,
                     'conta_credito': c_credito,
                     'cnpj_credito': cnpj_credito,
+                    'valor': valor,
                     'status': status_final.replace('✅ ', '').replace('⚠️ ', '').replace('❌ ', ''), 
                     'observacao': observacao
                 })
@@ -274,13 +287,14 @@ class BatimentoOM5View(ctk.CTkFrame):
                     'cnpj_debito': cnpj_debito,
                     'conta_credito': c_credito,
                     'cnpj_credito': cnpj_credito,
+                    'valor': valor,
                     'status': status_final.replace('✅ ', '').replace('⚠️ ', '').replace('❌ ', ''), 
                     'observacao': observacao
                 })
 
             # Salva os dados na lista em vez de jogar direto na tela
             linhas_processadas.append({
-                'valores': (c_debito, cnpj_debito, c_credito, cnpj_credito, status_final, observacao, '☐', '☐'),
+                'valores': (c_debito, cnpj_debito, c_credito, cnpj_credito, valor, status_final, observacao, '☐', '☐'),
                 'tag_visual': tag_visual,
                 'prioridade': prioridade
             })
@@ -316,56 +330,50 @@ class BatimentoOM5View(ctk.CTkFrame):
         self.val_incorretas.set(str(qtd_incorretas))
 
         # ADICIONADO: Chamada final para salvar tudo no banco de dados
-        self._registrar_log(
-            nome_arquivo=nome_arquivo,
-            total=total_operacoes,
-            batidas=qtd_batidas,
-            nao_encontradas=qtd_nao_encontradas,
-            incorretas=qtd_incorretas,
-            linhas_completa=dados_para_banco
-        )
+        self._registrar_log(nome_arquivo, dados_para_banco)
 
-    def _registrar_log(self, nome_arquivo, total, batidas, nao_encontradas, incorretas, linhas_completas):
+    def _registrar_log(self, nome_arquivo, linhas_completas):
         """
-        Registra o log do lote (macro) e todas as linhas (micro) no banco.
+        Gera um novo id_lote e registra todas as linhas na tabela única.
         """
         data_hora_atual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         id_usuario = getattr(self, 'usuario_logado', 'SISTEMA')
         cursor = self.db_manager.cursor
 
         try:
-            # 1. Macro (igual ao anterior)
-            query_macro = """
-                INSERT INTO log_lotes 
-                (nome_arquivo, id_usuario, total_operacoes, qtd_batidas, 
-                 qtd_nao_encontradas, qtd_incorretas, data_hora_upload)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """
-            cursor.execute(query_macro, (nome_arquivo, id_usuario, total, batidas, nao_encontradas, incorretas, data_hora_atual))
+            # 1. Buscar o id do último lote
+            cursor.execute("SELECT MAX(id_lote) FROM liq.BATIMENTO_OM5")
+            resultado = cursor.fetchone()
+            ultimo_id = resultado[0] if resultado and resultado[0] is not None else 0
             
-            id_lote_gerado = cursor.fetchone()[0]
-            self.id_lote_atual = id_lote_gerado
+            # Novo ID
+            novo_id_lote = ultimo_id + 1
+            self.id_lote_atual = novo_id_lote
 
-            # 2. Micro (AGORA COM OS CNPJS E INSERINDO TUDO)
+            # 2. Inserir todos os registros de uma vez na nova tabela única
             if linhas_completas:
-                query_micro = """
-                    INSERT INTO log_detalhes 
-                    (id_lote, conta_debito, cnpj_debito, conta_credito, cnpj_credito, status_erro, observacao)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                query_insert = """
+                    INSERT INTO liq.BATIMENTO_OM5 
+                    (id_lote, responsavel, nome_arquivo, conta_debito, cnpj_debito, 
+                     conta_credito, cnpj_credito, valor, status, observacao, data_upload)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 
-                valores_micro = [
-                    (id_lote_gerado, linha['conta_debito'], linha['cnpj_debito'], linha['conta_credito'], linha['cnpj_credito'], linha['status'], linha['observacao'])
+                valores_insert = [
+                    (novo_id_lote, id_usuario, nome_arquivo, linha['conta_debito'], 
+                     linha['cnpj_debito'], linha['conta_credito'], linha['cnpj_credito'], 
+                     linha['valor'],
+                     linha['status'], linha['observacao'], data_hora_atual)
                     for linha in linhas_completas
                 ]
                 
-                cursor.executemany(query_micro, valores_micro)
+                cursor.executemany(query_insert, valores_insert)
 
             self.db_manager.commit()
             
         except Exception as e:
             self.db_manager.rollback()
-            print(f"Erro ao salvar log no banco de dados: {e}")
+            print(f"Erro ao salvar lote no banco de dados: {e}")
 
     def _obter_base_real(self):
         """
@@ -464,29 +472,89 @@ class BatimentoOM5View(ctk.CTkFrame):
         aba_aws = tabview.tab("Credenciais AWS")
 
         ctk.CTkLabel(aba_aws, text="AWS Access Key ID:", anchor="w", width=250).pack(pady=(10, 0))
-        aws_key_entry = ctk.CTkEntry(aba_aws, width=250, border_color=config.AZUL)
-        aws_key_entry.pack(pady=(5, 10))
+        # Adicionado self.
+        self.aws_key_entry = ctk.CTkEntry(aba_aws, width=250, border_color=config.AZUL)
+        self.aws_key_entry.pack(pady=(5, 10))
 
         ctk.CTkLabel(aba_aws, text="AWS Secret Access Key:", anchor="w", width=250).pack(pady=(10, 0))
-        aws_secret_entry = ctk.CTkEntry(aba_aws, width=250, show="*", border_color=config.AZUL)
-        aws_secret_entry.pack(pady=(5, 10))
+        # Adicionado self.
+        self.aws_secret_entry = ctk.CTkEntry(aba_aws, width=250, show="*", border_color=config.AZUL)
+        self.aws_secret_entry.pack(pady=(5, 10))
 
         ctk.CTkLabel(aba_aws, text="AWS Session Token:", anchor="w", width=250).pack(pady=(10, 0))
-        aws_token_entry = ctk.CTkEntry(aba_aws, width=250, border_color=config.AZUL)
-        aws_token_entry.pack(pady=(5, 20))
+        # Adicionado self.
+        self.aws_token_entry = ctk.CTkEntry(aba_aws, width=250, border_color=config.AZUL)
+        self.aws_token_entry.pack(pady=(5, 20))
 
-        # Frame transparente apenas para agrupar os botões lado a lado no centro
         frame_botoes = ctk.CTkFrame(aba_aws, fg_color="transparent")
         frame_botoes.pack(pady=10)
 
-        # Botões dentro do frame, com as cores personalizadas
+        # Adicionado o command=self._atualizar_credenciais
         btn_atualizar = ctk.CTkButton(frame_botoes, text="Atualizar", width=125,
-                                      fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
+                                      fg_color=config.AZUL, hover_color=config.AZUL_HOVER,
+                                      command=self._atualizar_credenciais)
         btn_atualizar.pack(side="left", padx=10)
 
+        # Adicionado o command=self._abrir_site_aws
         btn_site_aws = ctk.CTkButton(frame_botoes, text="Site da AWS", width=125,
-                                     fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
+                                     fg_color=config.AZUL, hover_color=config.AZUL_HOVER,
+                                     command=self._abrir_site_aws)
         btn_site_aws.pack(side="left", padx=10)
+
+    def _atualizar_credenciais(self):
+        """
+        Lê os valores inseridos na interface e atualiza o arquivo 'credentials' na pasta .aws.
+        """
+        key = self.aws_key_entry.get().strip()
+        secret = self.aws_secret_entry.get().strip()
+        token = self.aws_token_entry.get().strip()
+
+        # Validação simples para evitar salvar arquivo em branco
+        if not key or not secret or not token:
+            messagebox.showwarning("Atenção", "Preencha todos os campos antes de atualizar.")
+            return
+
+        # Busca o caminho do diretório home do usuário e define a pasta .aws
+        caminho_aws = os.path.expanduser("~/.aws")
+        arquivo_credentials = os.path.join(caminho_aws, "credentials")
+
+        # Texto no formato padrão esperado pela AWS CLI / Boto3 / Athena
+        conteudo = f"""[default]
+aws_access_key_id = {key}
+aws_secret_access_key = {secret}
+aws_session_token = {token}
+"""
+        try:
+            # Cria a pasta .aws caso ela não exista
+            os.makedirs(caminho_aws, exist_ok=True)
+            
+            # Sobrescreve (ou cria) o arquivo credentials
+            with open(arquivo_credentials, "w", encoding="utf-8") as f:
+                f.write(conteudo)
+                
+            messagebox.showinfo("Sucesso", "Credenciais AWS atualizadas com sucesso!")
+            
+            # Opcional: Limpar os campos após o sucesso
+            self.aws_key_entry.delete(0, 'end')
+            self.aws_secret_entry.delete(0, 'end')
+            self.aws_token_entry.delete(0, 'end')
+            
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível salvar as credenciais:\n{str(e)}")
+
+    def _abrir_site_aws(self):
+        """
+        Abre a URL desejada focando na utilização do Microsoft Edge.
+        """
+        url = "https://www.youtube.com" # Substitua pela sua URL real depois
+        
+        try:
+            # Tenta forçar a abertura especificamente pelo Microsoft Edge no Windows
+            subprocess.Popen(["start", "msedge", url], shell=True)
+        except Exception:
+            # Fallback seguro: se falhar, abre no navegador padrão do sistema do usuário
+            webbrowser.open(url)
+
 
     def _ao_clicar_na_tabela(self, event):
         """
@@ -499,8 +567,7 @@ class BatimentoOM5View(ctk.CTkFrame):
         row_id = self.tree.identify_row(event.y)
         column_id = self.tree.identify_column(event.x)
 
-        # '#7' = Coordenador, '#8' = Gerente
-        if column_id in ('#7', '#8'):
+        if column_id in ('#8', '#9'):
             valores_atuais = list(self.tree.item(row_id, 'values'))
             indice_coluna = int(column_id.replace('#', '')) - 1
 
@@ -519,8 +586,10 @@ class BatimentoOM5View(ctk.CTkFrame):
             
             # Define os valores para o banco: 1 (True) se marcou, 0 (False) se desmarcou
             is_checked = 1 if novo_valor == '☑' else 0
-            # Se foi marcado, pega a data/hora atual. Se desmarcou, envia None (vira NULL no banco)
+            
+            # Se foi marcado, pega a data/hora e o usuário. Se desmarcou, envia None (vira NULL no banco)
             data_hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S") if is_checked else None
+            user_resp = getattr(self, 'usuario_logado', 'SISTEMA') if is_checked else None
 
             # Verifica se temos o ID do lote gerado
             id_lote = getattr(self, 'id_lote_atual', None)
@@ -532,20 +601,20 @@ class BatimentoOM5View(ctk.CTkFrame):
             try:
                 cursor = self.db_manager.cursor
                 
-                if column_id == '#7': # Coordenador
+                if column_id == '#8':
                     query = """
-                        UPDATE log_detalhes 
-                        SET aprov_coord = ?, data_aprov_coord = ?
+                        UPDATE liq.BATIMENTO_OM5 
+                        SET aprov_coord = ?, data_aprov_coord = ?, coord_responsavel = ?
                         WHERE id_lote = ? AND conta_debito = ? AND conta_credito = ?
                     """
-                else: # Gerente
+                else:
                     query = """
-                        UPDATE log_detalhes 
-                        SET aprov_geren = ?, data_aprov_geren = ?
+                        UPDATE liq.BATIMENTO_OM5 
+                        SET aprov_geren = ?, data_aprov_geren = ?, geren_responsavel = ?
                         WHERE id_lote = ? AND conta_debito = ? AND conta_credito = ?
                     """
                 
-                cursor.execute(query, (is_checked, data_hora, id_lote, conta_deb, conta_cred))
+                cursor.execute(query, (is_checked, data_hora, user_resp, id_lote, conta_deb, conta_cred))
                 self.db_manager.commit()
                 
             except Exception as e:
@@ -554,42 +623,35 @@ class BatimentoOM5View(ctk.CTkFrame):
 
     def _carregar_ultimo_lote_hoje(self):
         """
-        Busca o último id_lote salvo com a data de hoje.
-        Carrega todos os detalhes no Treeview (incluindo CNPJs) e recarrega os checkboxes.
+        Busca o último id_lote salvo hoje na tabela única, recalcula o macro e atualiza a interface.
         """
         cursor = self.db_manager.cursor
         data_hoje = datetime.now().strftime("%Y-%m-%d")
 
         try:
-            # 1. Busca o último lote de hoje na tabela macro
-            query_lote = """
-                SELECT id_lote, total_operacoes, qtd_batidas, qtd_nao_encontradas, qtd_incorretas 
-                FROM log_lotes 
-                WHERE data_hora_upload LIKE ? 
-                ORDER BY id_lote DESC
+            # 1. Pega o ID do último lote de hoje
+            query_ultimo_id = """
+                SELECT MAX(id_lote) 
+                FROM liq.BATIMENTO_OM5 
+                WHERE data_upload LIKE ?
             """
-            cursor.execute(query_lote, (f"{data_hoje}%",))
-            lote_info = cursor.fetchone()
+            cursor.execute(query_ultimo_id, (f"{data_hoje}%",))
+            resultado_id = cursor.fetchone()
 
-            if not lote_info:
+            if not resultado_id or resultado_id[0] is None:
                 return
 
-            self.id_lote_atual = lote_info[0]
+            self.id_lote_atual = resultado_id[0]
 
-            # Atualiza os Cards Superiores
-            self.val_operacoes.set(str(lote_info[1]))
-            self.val_batidas.set(str(lote_info[2]))
-            self.val_nao_encontradas.set(str(lote_info[3]))
-            self.val_incorretas.set(str(lote_info[4]))
-
-            # 2. Busca os dados da tabela micro (AGORA COM OS CNPJS INCLUÍDOS)
+            # 2. Busca todas as operações associadas a esse lote
             query_detalhes = """
                 SELECT 
                     conta_debito, cnpj_debito, 
                     conta_credito, cnpj_credito, 
-                    status_erro, observacao, 
+                    valor, 
+                    status, observacao, 
                     aprov_coord, aprov_geren
-                FROM log_detalhes
+                FROM liq.BATIMENTO_OM5
                 WHERE id_lote = ?
             """
             cursor.execute(query_detalhes, (self.id_lote_atual,))
@@ -599,42 +661,45 @@ class BatimentoOM5View(ctk.CTkFrame):
             for item in self.tree.get_children():
                 self.tree.delete(item)
 
-            # 3. Insere os dados recuperados na interface
-            for index, row in enumerate(linhas_banco):
-                c_debito = row[0]
-                cnpj_debito = row[1]
-                c_credito = row[2]
-                cnpj_credito = row[3]
-                status = row[4]
-                observacao = row[5]
-                
-                # Traduz o valor do banco (1/True = Marcado, 0/False/None = Vazio)
-                check_coord = '☑' if row[6] else '☐'
-                check_geren = '☑' if row[7] else '☐'
+            # Variáveis para recriar os dados dos "Cards" (macro)
+            total_operacoes = len(linhas_banco)
+            qtd_batidas = 0
+            qtd_nao_encontradas = 0
+            qtd_incorretas = 0
 
-                # Recria a lógica visual de zebrado baseado no status
+            # 3. Insere os dados recuperados na interface e soma o macro
+            for index, row in enumerate(linhas_banco):
+                c_debito, cnpj_debito, c_credito, cnpj_credito, valor, status, observacao, check_coord_db, check_geren_db = row
+                
+                check_coord = '☑' if check_coord_db else '☐'
+                check_geren = '☑' if check_geren_db else '☐'
+
                 status_upper = str(status).upper()
                 
-                # Garante que o emoji não seja duplicado caso já venha do banco
                 if "NÃO ENCONTRADA" in status_upper:
                     tag_base = 'nao_encontrada'
                     status_final = f"⚠️ {status}" if "⚠️" not in status else status
+                    qtd_nao_encontradas += 1
                 elif "INCORRETA" in status_upper:
                     tag_base = 'incorreta'
                     status_final = f"❌ {status}" if "❌" not in status else status
+                    qtd_incorretas += 1
                 else:
                     tag_base = 'normal'
                     status_final = f"✅ {status}" if "✅" not in status else status
+                    qtd_batidas += 1
 
                 sufixo = '_par' if index % 2 == 0 else '_impar'
-                
-                if tag_base == 'normal':
-                    tag_final = 'par' if index % 2 == 0 else 'impar'
-                else:
-                    tag_final = f"{tag_base}{sufixo}"
+                tag_final = 'par' if tag_base == 'normal' and index % 2 == 0 else 'impar' if tag_base == 'normal' else f"{tag_base}{sufixo}"
 
-                valores = (c_debito, cnpj_debito, c_credito, cnpj_credito, status_final, observacao, check_coord, check_geren)
+                valores = (c_debito, cnpj_debito, c_credito, cnpj_credito, valor, status_final, observacao, check_coord, check_geren)
                 self.tree.insert('', 'end', values=valores, tags=(tag_final,))
+
+            # Atualiza os Cards Superiores com o recálculo
+            self.val_operacoes.set(str(total_operacoes))
+            self.val_batidas.set(str(qtd_batidas))
+            self.val_nao_encontradas.set(str(qtd_nao_encontradas))
+            self.val_incorretas.set(str(qtd_incorretas))
 
         except Exception as e:
             print(f"Erro ao carregar o lote do dia: {e}")
