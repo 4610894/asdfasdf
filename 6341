@@ -1,1 +1,63 @@
+import customtkinter as ctk
+import threading
 
+class ProgressWindow(ctk.CTkToplevel):
+    def __init__(self, parent, total):
+        super().__init__(parent)
+        self.title("Processando")
+        self.geometry("300x150")
+        self.grab_set()  # Bloqueia interação com a janela principal
+        
+        self.label = ctk.CTkLabel(self, text="Consultando contas...", font=("Arial", 14, "bold"))
+        self.label.pack(pady=(20, 10))
+        
+        # Ícone de carregamento (ProgressBar em modo indeterminado parece um spinner)
+        self.spinner = ctk.CTkProgressBar(self, orientation="horizontal", mode="indeterminate")
+        self.spinner.pack(pady=10, px=20)
+        self.spinner.start()
+        
+        self.counter_label = ctk.CTkLabel(self, text=f"0 / {total}")
+        self.counter_label.pack(pady=10)
+
+    def atualizar(self, atual, total):
+        self.counter_label.configure(text=f"{atual} / {total}")
+
+
+
+
+
+
+
+def _processar_e_comparar_dados(self, df_raw, nome_arquivo):
+        # ... (seu tratamento inicial de dados de DF permanece igual até aqui) ...
+        
+        df_tratado = df.copy() # O DF que você já limpou
+        
+        # Criar a janela de progresso
+        total_contas = len(df_tratado)
+        self.progresso_gui = ProgressWindow(self, total_contas)
+        
+        # Iniciar a consulta em uma thread separada para não travar o GUI
+        threading.Thread(target=self._worker_consulta_aws, args=(df_tratado,), daemon=True).start()
+
+    def _worker_consulta_aws(self, df_tratado):
+        """Função que roda em background"""
+        lista_resultados = []
+        total = len(df_tratado)
+
+        for i, row in enumerate(df_tratado.itertuples(), 1):
+            # Simulando a consulta demorada na AWS
+            resultado = self._consultar_aws_individual(row) 
+            lista_resultados.append(resultado)
+            
+            # Atualiza a interface (usando after para ser thread-safe)
+            self.progresso_gui.after(0, self.progresso_gui.atualizar, i, total)
+
+        # Ao terminar, fecha o popup e volta para a thread principal para atualizar a tela
+        self.progresso_gui.after(0, self.progresso_gui.destroy)
+        self.progresso_gui.after(0, lambda: self._finalizar_processamento(lista_resultados))
+
+    def _finalizar_processamento(self, resultados):
+        """Atualiza Treeview e Cards com os dados finais"""
+        # Aqui você coloca o código que atualiza o Treeview e os Cards
+        print("Processamento concluído!")
