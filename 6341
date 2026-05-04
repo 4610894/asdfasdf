@@ -1,1 +1,892 @@
+'''
+MUDANÇAS
 
+- _carregar_arquivo()'''
+
+from tkinter import ttk, messagebox, filedialog
+import customtkinter as ctk
+from logger import Logger
+import config
+import pyodbc
+import pandas as pd
+import os
+import re
+from datetime import timedelta, datetime
+from PIL import Image
+from holidays.countries import Brazil
+
+import subprocess
+import webbrowser
+
+import customtkinter as ctk
+import threading
+
+from time import sleep
+
+
+class BatimentoOM5View(ctk.CTkFrame):
+    def __init__(self, parent):
+        """
+        Inicializa a view de cadastro de eventos.
+        ...
+        """
+        super().__init__(parent, fg_color='transparent')
+
+        # Variáveis para os Cards de Resumo (iniciam com "--")
+        self.val_operacoes = ctk.StringVar(value="--")
+        self.val_batidas = ctk.StringVar(value="--")
+        self.val_nao_encontradas = ctk.StringVar(value="--")
+        self.val_incorretas = ctk.StringVar(value="--")
+
+        self._create_widgets()
+
+    def _create_widgets(self):
+        """Cria e organiza os elementos da interface"""
+
+        # --- CABEÇALHO ---
+        header_frame = ctk.CTkFrame(self, fg_color=config.AZUL, height=80)
+        header_frame.pack(fill='x', pady=(20, 10))
+        header_frame.pack_propagate(False)
+
+        left_container = ctk.CTkFrame(header_frame, fg_color='transparent')
+        left_container.pack(side='left', padx=20, pady=0)
+
+        # Logo
+        logo_img = ctk.CTkImage(light_image=Image.open("intern/logo_itau.png"), size=(60, 60))
+        logo_label = ctk.CTkLabel(left_container, image=logo_img, text='', width=40, height=40)
+        logo_label.pack(side='left')
+
+        # Título
+        title_label = ctk.CTkLabel(header_frame, text='Batimento OM5', font=('Arial', 28, 'bold'), text_color='white')
+        title_label.pack(side='left', anchor='w', padx=(0, 0))
+
+
+        # --- LAYOUT PRINCIPAL ---
+        main_frame = ctk.CTkFrame(self, fg_color='transparent')
+        main_frame.pack(side="top", fill="both", expand=True, padx=20, pady=(10, 0))
+
+        # --- CARDS DE RESUMO (Substituindo o antigo form_frame) ---
+        cards_frame = ctk.CTkFrame(main_frame, fg_color='transparent')
+        cards_frame.grid(row=0, column=0, pady=(0, 20), sticky='n')
+
+        # Cores (usando um amarelo mais escuro/mostarda para não sumir no fundo branco)
+        cor_borda = config.AZUL
+        
+        # Criando os 4 cards lado a lado
+        self._criar_card(cards_frame, "Operações", self.val_operacoes, "black", cor_borda).grid(row=0, column=0, padx=15)
+        self._criar_card(cards_frame, "Batidas", self.val_batidas, "#009900", cor_borda).grid(row=0, column=1, padx=15) # Verde
+        self._criar_card(cards_frame, "não encontradas", self.val_nao_encontradas, "#D4A017", cor_borda).grid(row=0, column=2, padx=15) # Amarelo escuro
+        self._criar_card(cards_frame, "incorretas", self.val_incorretas, "red", cor_borda).grid(row=0, column=3, padx=15) # Vermelho
+
+        # --- LOG E TREEVIEW ---
+        left_frame = ctk.CTkFrame(main_frame, fg_color='transparent')
+        left_frame.grid(row=1, column=0, sticky='nsew', padx=20)
+
+        # 1. Adicionadas as novas colunas (incluindo 'Valor')
+        colunas = ('Conta Débito', 'CNPJ Débito', 'Conta Crédito', 'CNPJ Crédito', 'Valor', 'Status', 'Observação', 'Aprov. Coord.', 'Aprov. Gerente')
+        self.tree = ttk.Treeview(left_frame, columns=colunas, show='headings', height=18)
+        
+        # --- CRIAÇÃO E CONEXÃO DA BARRA DE ROLAGEM ---
+        scrollbar = ctk.CTkScrollbar(left_frame, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        # --------------------------------------------
+        
+        for col in colunas:
+            self.tree.heading(col, text=col)
+            
+            # Ajuste das larguras para acomodar os "checkboxes"
+            if col == "Observação":
+                self.tree.column(col, width=200, anchor='center')
+            elif col in ['Aprov. Coord.', 'Aprov. Gerente']:
+                self.tree.column(col, width=90, anchor='center')
+            else:
+                self.tree.column(col, width=100, anchor='center')
+        
+        # Configuração das cores das linhas zebradas... (mantenha as suas tags originais)
+        self.tree.tag_configure('impar', background='white')
+        self.tree.tag_configure('par', background='#e8e8e8')
+        self.tree.tag_configure('incorreta_impar', background='#ffcccc')
+        self.tree.tag_configure('incorreta_par', background='#ffb3b3')
+        self.tree.tag_configure('nao_encontrada_impar', background='#fff3cd')
+        self.tree.tag_configure('nao_encontrada_par', background='#ffe69c')
+
+        # --- EMPACOTAMENTO DA BARRA E DA TABELA ---
+        # A barra de rolagem precisa ser empacotada à direita e preencher o eixo Y
+        scrollbar.pack(side='right', fill='y')
+        # A árvore vai à esquerda e preenche o resto do espaço
+        self.tree.pack(side='left', fill='both', expand=True)
+
+        # 2. EVENTO DE CLIQUE: Mapeia soltar o botão esquerdo do mouse na tabela
+        self.tree.bind('<Double-1>', self._ao_clicar_na_tabela)
+
+        # --- BOTÕES FINAIS ---
+        final_frame = ctk.CTkFrame(main_frame, fg_color='transparent')
+        final_frame.grid(row=2, column=0, pady=10, sticky='n')
+
+        ctk.CTkButton(final_frame, text="Consultar lote", command=self._carregar_arquivo, width=150, fg_color=config.AZUL, hover_color=config.AZUL_HOVER).grid(row=0, column=0, padx=10, pady=10)
+        ctk.CTkButton(final_frame, text="Consultar contas", command=self._interface_consulta, width=150, fg_color=config.AZUL, hover_color=config.AZUL_HOVER).grid(row=0, column=1, padx=10, pady=10)
+        ctk.CTkButton(final_frame, text="Histórico de Lotes", command=self._interface_historico, width=150, fg_color=config.AZUL, hover_color=config.AZUL_HOVER).grid(row=0, column=2, padx=10, pady=10)
+        # ctk.CTkButton(final_frame, text="Inserir", command=self._inserir_dados, width=150, fg_color=config.AZUL, hover_color=config.AZUL_HOVER).grid(row=0, column=2, padx=10, pady=10)
+
+        # Configura o redimensionamento do grid principal
+        main_frame.grid_columnconfigure(0, weight=1)
+        main_frame.grid_rowconfigure(1, weight=1)
+
+    def _criar_card(self, parent, titulo, variavel, cor_valor, cor_borda):
+        """
+        Método auxiliar para criar os cards de resumo de forma padronizada.
+        """
+        # Cria a caixinha com borda e fundo branco (ou a cor do seu tema)
+        card = ctk.CTkFrame(parent, border_width=2, border_color=cor_borda, fg_color="white", corner_radius=15, width=160, height=80)
+        card.pack_propagate(False) # Impede que o frame encolha para o tamanho dos textos
+        
+        # Label do Valor (ex: --, 10, 50) com a cor específica
+        lbl_valor = ctk.CTkLabel(card, textvariable=variavel, font=("Arial", 26, "bold"), text_color=cor_valor)
+        lbl_valor.pack(pady=(10, 0))
+        
+        # Label do Título (ex: Operações, Batidas)
+        lbl_titulo = ctk.CTkLabel(card, text=titulo, font=("Arial", 12), text_color="black")
+        lbl_titulo.pack(pady=(0, 5))
+        
+        return card
+
+
+
+    def _carregar_arquivo(self):
+        """Abre o explorador e converte em DataFrame."""
+        caminho_arquivo = filedialog.askopenfilename(
+            title="Selecione o arquivo de operações",
+            filetypes=[("Arquivos Excel", "*.xlsx *.xls"),
+                       ("Arquivos CSV", "*.csv"),
+                       ("Todos os arquivos", "*.*")]
+        )
+
+        if not caminho_arquivo:
+            return
+
+        try:
+            if caminho_arquivo.endswith('.csv'):
+                df = pd.read_csv(caminho_arquivo, sep=';', encoding='utf-8') 
+            else:
+                df = pd.read_excel(caminho_arquivo)
+
+            nome_do_arquivo = os.path.basename(caminho_arquivo)
+            
+            # Chama o método que apenas PREPARA os dados e INICIA a thread
+            self._preparar_dados_e_iniciar_busca(df, nome_do_arquivo)
+
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível ler o arquivo.\nErro: {str(e)}")
+
+    def _preparar_dados_e_iniciar_busca(self, df_raw, nome_arquivo):
+        """Trata o DF, abre a janela de progresso e inicia a Thread de busca."""
+        df = df_raw.copy()
+        
+        # Tratamento de dados original
+        df['Agência'] = df['Agência'].astype(str).str.zfill(4)
+        df['Conta'] = df['Conta'].astype(str).str.zfill(5)
+        df['Dac'] = df['Dac'].astype(str).str.zfill(1)
+        df['CPF/CNPJ'] = df['CPF/CNPJ'].astype(str).str.zfill(14)
+
+        df['Agência.1'] = df['Agência.1'].astype(str).str.zfill(4)
+        df['Conta.1'] = df['Conta.1'].astype(str).str.zfill(5)
+        df['Dac.1'] = df['Dac.1'].astype(str).str.zfill(1)
+        df['CPF/CNPJ.1'] = df['CPF/CNPJ.1'].astype(str).str.zfill(14)
+
+        df['conta débito'] = df['Agência'] + '/' + df['Conta'] + '-' + df['Dac']
+        df['conta crédito'] = df['Agência.1'] + '/' + df['Conta.1'] + '-' + df['Dac.1']
+
+        df = df[['conta débito', 'CPF/CNPJ', 'conta crédito', 'CPF/CNPJ.1', 'Valor']].rename(
+            columns={
+                'CPF/CNPJ': 'cnpj débito',
+                'CPF/CNPJ.1': 'cnpj crédito',
+                'Valor': 'valor'
+            }
+        )
+
+        # Extrai APENAS as contas únicas para não buscar a mesma conta na AWS várias vezes
+        contas_unicas = pd.concat([df['conta débito'], df['conta crédito']]).unique().tolist()
+
+        # Abre a janela de progresso na Main Thread
+        total_contas = len(contas_unicas)
+        self.progresso_gui = ProgressWindow(self, total_contas) # Assumindo que self é a janela principal
+
+        # Inicia a Thread para buscar as contas
+        threading.Thread(
+            target=self._worker_consulta_aws, 
+            args=(contas_unicas, df, nome_arquivo), 
+            daemon=True
+        ).start()
+
+    def _worker_consulta_aws(self, contas_unicas, df_tratado, nome_arquivo):
+        """Roda em background. Busca as contas e avisa quando terminar."""
+        db_real = {}
+        total = len(contas_unicas)
+
+        try:
+
+            for i, conta in enumerate(contas_unicas, 1):
+                # SIMULANDO CONSULTA NA AWS:
+                sleep(1.5) # Simula o tempo de rede
+                
+                # Aqui você faria a consulta real. Simulação de retorno:
+                if conta in ['0123/01234-1', '0321/05432-2', '0001/00001-1', '0999/09999-9']:
+                    db_real[conta] = '000000000' + conta.split('/')[1].split('-')[0] # Simula um CNPJ
+                
+                # Atualiza a interface (thread-safe)
+                self.progresso_gui.after(0, self.progresso_gui.atualizar, i, total)
+
+            # Ao terminar, FECHA O POPUP e envia os dados para a função final
+            self.progresso_gui.after(0, self.progresso_gui.destroy)
+            
+            # O self.after garante que a interface gráfica e a comparação sejam feitas na Main Thread
+            self.after(0, lambda: self._processar_e_comparar_dados(df_tratado, db_real, nome_arquivo))
+        
+        except:
+            self.after(0, lambda: messagebox.showwarning(
+                    "Credenciais AWS Inválidas", 
+                    "Suas credenciais da AWS expiraram ou são inválidas.\n\nPor favor, atualize suas credenciais na aba 'Credenciais AWS' e tente novamente."
+                ))
+
+
+    def _processar_e_comparar_dados(self, df, db_real, nome_arquivo):
+        """Executa após a Thread terminar. Compara os dados e atualiza a GUI."""
+        
+        total_operacoes = len(df)
+        qtd_batidas = 0
+        qtd_nao_encontradas = 0
+        qtd_incorretas = 0
+        
+        linhas_processadas = []
+        dados_para_banco = []
+
+        # Lógica de Comparação Linha a Linha usando o db_real trazido da AWS
+        for index, row in df.iterrows():
+            c_debito = row['conta débito']
+            cnpj_debito = row['cnpj débito']
+            c_credito = row['conta crédito']
+            cnpj_credito = row['cnpj crédito']
+            valor = row['valor']
+
+            try:
+                valor_float = float(valor)
+                valor_str = f"{valor_float:,.2f}"
+                valor_formatado = f"R$ {valor_str.replace(',', 'X').replace('.', ',').replace('X', '.')}"
+            except ValueError:
+                valor_formatado = f"R$ {valor}"
+
+            # Validar Débito
+            status_deb = "OK"
+            if c_debito not in db_real:
+                status_deb = "NÃO ENCONTRADA"
+            elif db_real[c_debito] != cnpj_debito:
+                status_deb = "INCORRETA"
+
+            # Validar Crédito
+            status_cred = "OK"
+            if c_credito not in db_real:
+                status_cred = "NÃO ENCONTRADA"
+            elif db_real[c_credito] != cnpj_credito:
+                status_cred = "INCORRETA"
+
+            # Definir o Status Final
+            if status_deb == "OK" and status_cred == "OK":
+                status_final = "✅ Batida"
+                observacao = "OK"
+                qtd_batidas += 1
+                tag_visual = 'normal'
+                prioridade = 3
+            elif "NÃO ENCONTRADA" in status_deb or "NÃO ENCONTRADA" in status_cred:
+                status_final = "⚠️ Não encontrada"
+                observacao = f"D: {status_deb} | C: {status_cred}"
+                qtd_nao_encontradas += 1
+                tag_visual = 'nao_encontrada'
+                prioridade = 2
+            else:
+                status_final = "❌ Incorreta"
+                observacao = f"D: {status_deb} | C: {status_cred}"
+                qtd_incorretas += 1
+                tag_visual = 'incorreta'
+                prioridade = 1
+
+            dados_para_banco.append({
+                'conta_debito': c_debito,
+                'cnpj_debito': cnpj_debito,
+                'conta_credito': c_credito,
+                'cnpj_credito': cnpj_credito,
+                'valor': valor,
+                'status': status_final.replace('✅ ', '').replace('⚠️ ', '').replace('❌ ', ''), 
+                'observacao': observacao
+            })
+
+            linhas_processadas.append({
+                'valores': (c_debito, cnpj_debito, c_credito, cnpj_credito, valor_formatado, status_final, observacao, '☐', '☐'),
+                'tag_visual': tag_visual,
+                'prioridade': prioridade
+            })
+
+        # Ordena e insere na tela
+        linhas_processadas.sort(key=lambda x: x['prioridade'])
+
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        for index, item in enumerate(linhas_processadas):
+            tag_base = item['tag_visual']
+            sufixo = '_par' if index % 2 == 0 else '_impar'
+            tag_final = 'par' if tag_base == 'normal' and index % 2 == 0 else \
+                        'impar' if tag_base == 'normal' else f"{tag_base}{sufixo}"
+                
+            self.tree.insert('', 'end', values=item['valores'], tags=(tag_final,))
+
+        # Atualiza Cards
+        self.val_operacoes.set(str(total_operacoes))
+        self.val_batidas.set(str(qtd_batidas))
+        self.val_nao_encontradas.set(str(qtd_nao_encontradas))
+        self.val_incorretas.set(str(qtd_incorretas))
+
+        # Salva no banco
+        self._registrar_log(nome_arquivo, dados_para_banco)
+
+
+    def _obter_base_real(self, contas):
+        """
+        Função que simula como funcionaria a conexão com a base real na AWS
+        """
+
+        for conta in contas:
+            # consulta a conta na tabela e monta um dicionário com a chave sendo a conta e o valor o cnpj
+            sleep(1)
+
+        return {
+            '0123/01234-1': '00000000012345', # Certa
+            '0321/05432-2': '00000000054321', # Certa
+            '0001/00001-1': '00000000000001', # Certa
+            '0999/09999-9': '00000000099999', # Certa
+            }
+
+    def _finalizar_processamento(self, resultados):
+        """Atualiza Treeview e Cards com os dados finais"""
+        # Aqui você coloca o código que atualiza o Treeview e os Cards
+        print("Processamento concluído!")
+
+    def _registrar_log(self, nome_arquivo, linhas_completas):
+        """
+        Gera um novo id_lote e registra todas as linhas na tabela única.
+        """
+        data_hora_atual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        id_usuario = getattr(self, 'usuario_logado', 'SISTEMA')
+        cursor = self.db_manager.cursor
+
+        try:
+            # 1. Buscar o id do último lote
+            cursor.execute("SELECT MAX(id_lote) FROM liq.BATIMENTO_OM5")
+            resultado = cursor.fetchone()
+            ultimo_id = resultado[0] if resultado and resultado[0] is not None else 0
+            
+            # Novo ID
+            novo_id_lote = ultimo_id + 1
+            self.id_lote_atual = novo_id_lote
+
+            # 2. Inserir todos os registros de uma vez na nova tabela única
+            if linhas_completas:
+                query_insert = """
+                    INSERT INTO liq.BATIMENTO_OM5 
+                    (id_lote, responsavel, nome_arquivo, conta_debito, cnpj_debito, 
+                     conta_credito, cnpj_credito, valor, status, observacao, data_upload)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                
+                valores_insert = [
+                    (novo_id_lote, id_usuario, nome_arquivo, linha['conta_debito'], 
+                     linha['cnpj_debito'], linha['conta_credito'], linha['cnpj_credito'], 
+                     linha['valor'],
+                     linha['status'], linha['observacao'], data_hora_atual)
+                    for linha in linhas_completas
+                ]
+                
+                cursor.executemany(query_insert, valores_insert)
+
+            self.db_manager.commit()
+            
+        except Exception as e:
+            self.db_manager.rollback()
+            print(f"Erro ao salvar lote no banco de dados: {e}")
+
+        
+
+    def _interface_consulta(self):
+        # 1. Configuração da nova janela (Toplevel)
+        nova_janela = ctk.CTkToplevel(self)
+        nova_janela.title("Nova Consulta e Configurações")
+        nova_janela.geometry("350x450") 
+        nova_janela.grab_set() 
+        nova_janela.focus_force()
+
+        # 2. Criação do sistema de abas (Cores aplicadas na seleção das abas para manter a consistência)
+        tabview = ctk.CTkTabview(nova_janela, 
+                                 segmented_button_selected_color=config.AZUL,
+                                 segmented_button_selected_hover_color=config.AZUL_HOVER,
+                                 segmented_button_fg_color=config.AZUL,
+                                 segmented_button_unselected_color=config.AZUL,
+                                 segmented_button_unselected_hover_color=config.AZUL_HOVER)
+        tabview.pack(padx=20, pady=20, fill="both", expand=True)
+
+        # Adicionando as duas abas
+        tabview.add("Consulta")
+        tabview.add("Credenciais AWS")
+
+        # ==========================================
+        # ABA 1: CONSULTA
+        # ==========================================
+        aba_consulta = tabview.tab("Consulta")
+
+        ctk.CTkLabel(aba_consulta, text="Conta:", anchor="w", width=250).pack(pady=(20, 0))
+        conta_entry = ctk.CTkEntry(aba_consulta, width=250, border_color=config.AZUL)
+        conta_entry.pack(pady=(5, 15))
+
+        ctk.CTkLabel(aba_consulta, text="CNPJ:", anchor="w", width=250).pack(pady=(10, 0))
+        cnpj_entry = ctk.CTkEntry(aba_consulta, width=250, state="disabled", border_color=config.AZUL)
+        cnpj_entry.pack(pady=(5, 30))
+
+        btn_consultar = ctk.CTkButton(aba_consulta, text="Consultar", width=125, 
+                                      fg_color=config.AZUL, hover_color=config.AZUL_HOVER,
+                                      command=lambda: self._iniciar_consulta_individual(conta_entry.get(), cnpj_entry))
+        btn_consultar.pack(pady=10)
+
+
+        # ==========================================
+        # ABA 2: CREDENCIAIS AWS
+        # ==========================================
+        aba_aws = tabview.tab("Credenciais AWS")
+
+        ctk.CTkLabel(aba_aws, text="AWS Access Key ID:", anchor="w", width=250).pack(pady=(10, 0))
+        # Adicionado self.
+        self.aws_key_entry = ctk.CTkEntry(aba_aws, width=250, border_color=config.AZUL)
+        self.aws_key_entry.pack(pady=(5, 10))
+
+        ctk.CTkLabel(aba_aws, text="AWS Secret Access Key:", anchor="w", width=250).pack(pady=(10, 0))
+        # Adicionado self.
+        self.aws_secret_entry = ctk.CTkEntry(aba_aws, width=250, show="*", border_color=config.AZUL)
+        self.aws_secret_entry.pack(pady=(5, 10))
+
+        ctk.CTkLabel(aba_aws, text="AWS Session Token:", anchor="w", width=250).pack(pady=(10, 0))
+        # Adicionado self.
+        self.aws_token_entry = ctk.CTkEntry(aba_aws, width=250, border_color=config.AZUL)
+        self.aws_token_entry.pack(pady=(5, 20))
+
+        frame_botoes = ctk.CTkFrame(aba_aws, fg_color="transparent")
+        frame_botoes.pack(pady=10)
+
+        # Adicionado o command=self._atualizar_credenciais
+        btn_atualizar = ctk.CTkButton(frame_botoes, text="Atualizar", width=125,
+                                      fg_color=config.AZUL, hover_color=config.AZUL_HOVER,
+                                      command=self._atualizar_credenciais)
+        btn_atualizar.pack(side="left", padx=10)
+
+        # Adicionado o command=self._abrir_site_aws
+        btn_site_aws = ctk.CTkButton(frame_botoes, text="Site da AWS", width=125,
+                                     fg_color=config.AZUL, hover_color=config.AZUL_HOVER,
+                                     command=self._abrir_site_aws)
+        btn_site_aws.pack(side="left", padx=10)
+
+
+    # === ATUALIZAR CREDENCIAIS === #
+
+    def _atualizar_credenciais(self):
+        """
+        Lê os valores inseridos na interface e atualiza o arquivo 'credentials' na pasta .aws.
+        """
+        key = self.aws_key_entry.get().strip()
+        secret = self.aws_secret_entry.get().strip()
+        token = self.aws_token_entry.get().strip()
+
+        # Validação simples para evitar salvar arquivo em branco
+        if not key or not secret or not token:
+            messagebox.showwarning("Atenção", "Preencha todos os campos antes de atualizar.")
+            return
+
+        # Busca o caminho do diretório home do usuário e define a pasta .aws
+        caminho_aws = os.path.expanduser("~/.aws")
+        arquivo_credentials = os.path.join(caminho_aws, "credentials")
+
+        # Texto no formato padrão esperado pela AWS CLI / Boto3 / Athena
+        conteudo = f"""[default]
+aws_access_key_id = {key}
+aws_secret_access_key = {secret}
+aws_session_token = {token}
+"""
+        try:
+            # Cria a pasta .aws caso ela não exista
+            os.makedirs(caminho_aws, exist_ok=True)
+            
+            # Sobrescreve (ou cria) o arquivo credentials
+            with open(arquivo_credentials, "w", encoding="utf-8") as f:
+                f.write(conteudo)
+                
+            messagebox.showinfo("Sucesso", "Credenciais AWS atualizadas com sucesso!")
+            
+            # Opcional: Limpar os campos após o sucesso
+            self.aws_key_entry.delete(0, 'end')
+            self.aws_secret_entry.delete(0, 'end')
+            self.aws_token_entry.delete(0, 'end')
+            
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível salvar as credenciais:\n{str(e)}")
+
+    def _abrir_site_aws(self):
+        """
+        Abre a URL desejada focando na utilização do Microsoft Edge.
+        """
+        url = "https://www.youtube.com" # Substitua pela sua URL real depois
+        
+        try:
+            # Tenta forçar a abertura especificamente pelo Microsoft Edge no Windows
+            subprocess.Popen(["start", "msedge", url], shell=True)
+        except Exception:
+            # Fallback seguro: se falhar, abre no navegador padrão do sistema do usuário
+            webbrowser.open(url)
+
+
+    def _ao_clicar_na_tabela(self, event):
+        """
+        Captura o duplo clique na Treeview. Alterna o checkbox e atualiza o banco de dados.
+        """
+        regiao = self.tree.identify("region", event.x, event.y)
+        if regiao != "cell":
+            return
+
+        row_id = self.tree.identify_row(event.y)
+        column_id = self.tree.identify_column(event.x)
+
+        if column_id in ('#8', '#9'):
+            valores_atuais = list(self.tree.item(row_id, 'values'))
+            indice_coluna = int(column_id.replace('#', '')) - 1
+
+            valor_atual = valores_atuais[indice_coluna]
+            novo_valor = '☑' if valor_atual == '☐' else '☐'
+
+            # Atualiza a lista e insere de volta na interface
+            valores_atuais[indice_coluna] = novo_valor
+            self.tree.item(row_id, values=valores_atuais)
+
+            # --- LÓGICA DE ATUALIZAÇÃO DO BANCO DE DADOS ---
+            
+            # Coleta as chaves para encontrar a linha no banco
+            conta_deb = valores_atuais[0]
+            conta_cred = valores_atuais[2]
+            
+            # Define os valores para o banco: 1 (True) se marcou, 0 (False) se desmarcou
+            is_checked = 1 if novo_valor == '☑' else 0
+            
+            # Se foi marcado, pega a data/hora e o usuário. Se desmarcou, envia None (vira NULL no banco)
+            data_hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S") if is_checked else None
+            user_resp = getattr(self, 'usuario_logado', 'SISTEMA') if is_checked else None
+
+            # Verifica se temos o ID do lote gerado
+            id_lote = getattr(self, 'id_lote_atual', None)
+            
+            if id_lote is None:
+                print("Aviso: ID do lote atual não encontrado. A atualização não foi salva no banco.")
+                return
+
+            try:
+                cursor = self.db_manager.cursor
+                
+                if column_id == '#8':
+                    query = """
+                        UPDATE liq.BATIMENTO_OM5 
+                        SET aprov_coord = ?, data_aprov_coord = ?, coord_responsavel = ?
+                        WHERE id_lote = ? AND conta_debito = ? AND conta_credito = ?
+                    """
+                else:
+                    query = """
+                        UPDATE liq.BATIMENTO_OM5 
+                        SET aprov_geren = ?, data_aprov_geren = ?, geren_responsavel = ?
+                        WHERE id_lote = ? AND conta_debito = ? AND conta_credito = ?
+                    """
+                
+                cursor.execute(query, (is_checked, data_hora, user_resp, id_lote, conta_deb, conta_cred))
+                self.db_manager.commit()
+                
+            except Exception as e:
+                print(f"Erro ao atualizar aprovação no banco de dados: {e}")
+                self.db_manager.rollback()
+
+    def _carregar_ultimo_lote_hoje(self):
+        """Busca apenas o ID do último lote de hoje e repassa para o desenhador."""
+        cursor = self.db_manager.cursor
+        data_hoje = datetime.now().strftime("%Y-%m-%d")
+
+        try:
+            query_ultimo_id = """
+                SELECT MAX(id_lote) 
+                FROM liq.BATIMENTO_OM5 
+                WHERE data_upload LIKE ?
+            """
+            cursor.execute(query_ultimo_id, (f"{data_hoje}%",))
+            resultado_id = cursor.fetchone()
+
+            if resultado_id and resultado_id[0] is not None:
+                # Chama o novo método passando o ID encontrado
+                self._carregar_lote_especifico(resultado_id[0])
+
+        except Exception as e:
+            print(f"Erro ao buscar o ID do lote de hoje: {e}")
+
+    def _carregar_lote_especifico(self, id_lote):
+        """
+        Recebe um id_lote, busca no banco, recalcula o macro e atualiza a interface.
+        (Esta é a exata lógica que você já tinha, mas agora aceita qualquer ID)
+        """
+        self.id_lote_atual = id_lote
+        cursor = self.db_manager.cursor
+
+        try:
+            query_detalhes = """
+                SELECT 
+                    conta_debito, cnpj_debito, 
+                    conta_credito, cnpj_credito, 
+                    valor, 
+                    status, observacao, 
+                    aprov_coord, aprov_geren
+                FROM liq.BATIMENTO_OM5
+                WHERE id_lote = ?
+            """
+            cursor.execute(query_detalhes, (self.id_lote_atual,))
+            linhas_banco = cursor.fetchall()
+
+            for item in self.tree.get_children():
+                self.tree.delete(item)
+
+            total_operacoes = len(linhas_banco)
+            qtd_batidas = 0
+            qtd_nao_encontradas = 0
+            qtd_incorretas = 0
+
+            for index, row in enumerate(linhas_banco):
+                c_debito, cnpj_debito, c_credito, cnpj_credito, valor, status, observacao, check_coord_db, check_geren_db = row
+
+                try:
+                    valor_float = float(valor)
+                    valor_str = f"{valor_float:,.2f}"
+                    valor_formatado = f"R$ {valor_str.replace(',', 'X').replace('.', ',').replace('X', '.')}"
+                except ValueError:
+                    valor_formatado = f"R$ {valor}"
+                
+                check_coord = '☑' if check_coord_db else '☐'
+                check_geren = '☑' if check_geren_db else '☐'
+
+                status_upper = str(status).upper()
+                
+                if "NÃO ENCONTRADA" in status_upper:
+                    tag_base = 'nao_encontrada'
+                    status_final = f"⚠️ {status}" if "⚠️" not in status else status
+                    qtd_nao_encontradas += 1
+                elif "INCORRETA" in status_upper:
+                    tag_base = 'incorreta'
+                    status_final = f"❌ {status}" if "❌" not in status else status
+                    qtd_incorretas += 1
+                else:
+                    tag_base = 'normal'
+                    status_final = f"✅ {status}" if "✅" not in status else status
+                    qtd_batidas += 1
+
+                sufixo = '_par' if index % 2 == 0 else '_impar'
+                tag_final = 'par' if tag_base == 'normal' and index % 2 == 0 else 'impar' if tag_base == 'normal' else f"{tag_base}{sufixo}"
+
+                valores = (c_debito, cnpj_debito, c_credito, cnpj_credito, valor_formatado, status_final, observacao, check_coord, check_geren)
+                self.tree.insert('', 'end', values=valores, tags=(tag_final,))
+
+            self.val_operacoes.set(str(total_operacoes))
+            self.val_batidas.set(str(qtd_batidas))
+            self.val_nao_encontradas.set(str(qtd_nao_encontradas))
+            self.val_incorretas.set(str(qtd_incorretas))
+
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao carregar o lote {id_lote}:\n{e}")
+
+    def _interface_historico(self):
+        """Abre uma janela mostrando os lotes anteriores para navegação."""
+        janela_hist = ctk.CTkToplevel(self)
+        janela_hist.title("Histórico de Lotes")
+        janela_hist.geometry("500x400")
+        janela_hist.grab_set()
+        janela_hist.focus_force()
+
+        ctk.CTkLabel(janela_hist, text="Selecione um lote para visualizar:", font=("Arial", 14, "bold")).pack(pady=10)
+
+        # Frame para a Tabela de Histórico e Scrollbar
+        frame_tabela = ctk.CTkFrame(janela_hist, fg_color="transparent")
+        frame_tabela.pack(fill="both", expand=True, padx=20, pady=10)
+
+        colunas_hist = ('ID Lote', 'Data e Hora', 'Arquivo', 'Qtd. Operações')
+        tree_hist = ttk.Treeview(frame_tabela, columns=colunas_hist, show='headings', height=10)
+        
+        scrollbar_hist = ctk.CTkScrollbar(frame_tabela, command=tree_hist.yview)
+        tree_hist.configure(yscrollcommand=scrollbar_hist.set)
+
+        tree_hist.heading('ID Lote', text='ID')
+        tree_hist.column('ID Lote', width=50, anchor='center')
+        tree_hist.heading('Data e Hora', text='Data/Hora')
+        tree_hist.column('Data e Hora', width=130, anchor='center')
+        tree_hist.heading('Arquivo', text='Nome do Arquivo')
+        tree_hist.column('Arquivo', width=150, anchor='w')
+        tree_hist.heading('Qtd. Operações', text='Operações')
+        tree_hist.column('Qtd. Operações', width=80, anchor='center')
+
+        scrollbar_hist.pack(side='right', fill='y')
+        tree_hist.pack(side='left', fill='both', expand=True)
+
+        # Preenche a tabela com os dados agrupados
+        cursor = self.db_manager.cursor
+        try:
+            query_agrupamento = """
+                SELECT 
+                    id_lote, 
+                    MAX(data_upload) as data_upload, 
+                    MAX(nome_arquivo) as nome_arquivo, 
+                    COUNT(*) as qtd
+                FROM liq.BATIMENTO_OM5
+                GROUP BY id_lote
+                ORDER BY id_lote DESC
+            """
+            cursor.execute(query_agrupamento)
+            lotes = cursor.fetchall()
+
+            for lote in lotes:
+                tree_hist.insert('', 'end', values=(lote[0], lote[1], lote[2], lote[3]))
+
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível carregar o histórico:\n{e}")
+
+        # Função para o botão de carregar
+        def _carregar_selecionado():
+            selecao = tree_hist.selection()
+            if not selecao:
+                messagebox.showwarning("Aviso", "Selecione um lote na tabela.")
+                return
+            
+            # Pega o item selecionado e extrai o ID Lote (índice 0)
+            item = tree_hist.item(selecao[0])
+            id_selecionado = item['values'][0]
+            
+            self._carregar_lote_especifico(id_selecionado)
+            janela_hist.destroy()
+
+        # Botão final da janela
+        btn_carregar = ctk.CTkButton(janela_hist, text="Carregar Lote Selecionado", 
+                                     command=_carregar_selecionado, 
+                                     fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
+        btn_carregar.pack(pady=15)
+        
+        # Opcional: Permitir carregar com duplo clique
+        tree_hist.bind('<Double-1>', lambda event: _carregar_selecionado())
+
+    def _iniciar_consulta_individual(self, conta_digitada, cnpj_entry):
+        """Inicia o processo de busca para uma única conta."""
+        conta_digitada = conta_digitada.strip()
+
+        if not conta_digitada:
+            messagebox.showwarning("Aviso", "Por favor, digite uma conta.")
+            return
+
+        # Limpa o campo de CNPJ caso já tenha alguma consulta anterior lá
+        cnpj_entry.configure(state="normal")
+        cnpj_entry.delete(0, 'end')
+        cnpj_entry.configure(state="disabled")
+
+        # Inicia a janela de progresso (Total de 1 item)
+        self.progresso_gui = ProgressWindow(self, 1)
+
+        # Inicia a thread para não travar a aba de configurações
+        threading.Thread(
+            target=self._worker_consulta_individual,
+            args=(conta_digitada, cnpj_entry),
+            daemon=True
+        ).start()
+
+    def _worker_consulta_individual(self, conta, cnpj_entry):
+        """Roda em background para consultar apenas uma conta na AWS."""
+        try:
+            # SIMULANDO CONSULTA NA AWS:
+            sleep(1.5) # Simula o delay da rede
+            
+            # Aqui você faria a sua chamada real para a AWS
+            # Exemplo simulado de retorno:
+            if conta in ['0123/01234-1', '0321/05432-2', '0001/00001-1', '0999/09999-9']:
+                cnpj_encontrado = '000000000' + conta.split('/')[1].split('-')[0]
+            else:
+                cnpj_encontrado = "NÃO ENCONTRADO"
+
+            # Atualiza o contador do progresso (1/1)
+            self.progresso_gui.after(0, self.progresso_gui.atualizar, 1, 1)
+
+            # Fecha a janela de progresso
+            self.progresso_gui.after(0, self.progresso_gui.destroy)
+
+            # Envia o resultado de volta para a Thread principal atualizar a Entry
+            self.after(0, lambda: self._atualizar_resultado_individual(cnpj_entry, cnpj_encontrado))
+        
+        except:
+            self.after(0, lambda: messagebox.showwarning(
+                        "Credenciais AWS Inválidas", 
+                        "Suas credenciais da AWS expiraram ou são inválidas.\n\nPor favor, atualize suas credenciais na aba 'Credenciais AWS' e tente novamente."
+                    ))
+            self.after(0, lambda: self._restaurar_entry_apos_erro(cnpj_entry))
+
+    def _atualizar_resultado_individual(self, cnpj_entry, resultado):
+        """Atualiza o campo do CustomTkinter com o resultado final."""
+        # Habilita o campo para edição, insere o valor e desabilita novamente
+        cnpj_entry.configure(state="normal")
+        cnpj_entry.delete(0, 'end')
+        cnpj_entry.insert(0, resultado)
+        
+        # Se não quiser que o texto fique apagado visualmente, você pode 
+        # mudar a cor da fonte antes de dar disable, ou usar state="readonly"
+        cnpj_entry.configure(state="disabled")
+
+    def _restaurar_entry_apos_erro(self, cnpj_entry):
+        """Caso a consulta individual falhe, deixa o campo pronto para nova tentativa."""
+        cnpj_entry.configure(state="normal")
+        cnpj_entry.delete(0, 'end')
+        cnpj_entry.configure(state="disabled")
+
+
+
+    def _obter_base_ficticia(self):
+        """
+        Simula uma consulta ao banco de dados.
+        Retorna um dicionário onde a chave é 'agência/conta-dac' e o valor é o 'cnpj' (formatados).
+        """
+        return {
+            '0123/01234-1': '00000000012345', # Certa
+            '0321/05432-2': '00000000054321', # Certa
+            '0001/00001-1': '00000000000001', # Certa
+            '0999/09999-9': '00000000099999', # Certa
+            # A conta 0777/07777-7 propositalmente não está aqui para testar o "Não Encontrada"
+        }
+
+
+
+
+class ProgressWindow(ctk.CTkToplevel):
+    def __init__(self, parent, total):
+        super().__init__(parent)
+        self.title("Processando")
+        self.geometry("300x150")
+        self.grab_set()  # Bloqueia interação com a janela principal
+        
+        self.label = ctk.CTkLabel(self, text="Consultando contas...", font=("Arial", 14, "bold"))
+        self.label.pack(pady=(20, 10))
+        
+        # Ícone de carregamento (ProgressBar em modo indeterminado parece um spinner)
+        self.spinner = ctk.CTkProgressBar(self, orientation="horizontal", mode="indeterminate")
+        self.spinner.pack(pady=10, padx=20)
+        self.spinner.start()
+        
+        self.counter_label = ctk.CTkLabel(self, text=f"0 / {total}")
+        self.counter_label.pack(pady=10)
+
+    def atualizar(self, atual, total):
+        self.counter_label.configure(text=f"{atual} / {total} contas")
