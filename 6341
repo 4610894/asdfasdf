@@ -1,19 +1,71 @@
-import pandas as pd
+from io import BytesIO
+from datetime import datetime
+import base64
 
-# 1. Primeiro merge: buscar o 'sac' usando o 'cci'
-df_final = df_ordenado.merge(df_depara[['cci', 'sac']], on='cci', how='left')
+from docx import Document
 
-# 2. Segundo merge: buscar o 'sac' usando o 'cnpj' (apenas como coluna auxiliar)
-df_final = df_final.merge(df_depara[['cnpj', 'sac']], on='cnpj', how='left', suffixes=('', '_aux'))
+# ============================================
+# COLE AQUI O BASE64 DO SEU MODELO .DOCX
+# ============================================
 
-# 3. Regra de fallback: Se o 'sac' estiver vazio, usa o 'sac_aux' (encontrado pelo cnpj)
-df_final['sac'] = df_final['sac'].fillna(df_final['sac_aux'])
+base64_string = """
+COLE_SEU_BASE64_AQUI
+"""
 
-# Limpeza: remove a coluna auxiliar que não precisamos mais
-df_final = df_final.drop(columns=['sac_aux'])
+# ============================================
+# ENTRADA DO USUÁRIO
+# ============================================
 
-# 4. Terceiro merge: cruzar com o df_depara_amb usando a coluna 'sac' consolidada
-df_final = df_final.merge(df_depara_amb, on='sac', how='left')
+valor = float(input("Digite o valor: "))
 
-# Exibir o resultado
-print(df_final.head())
+# Formata o valor (ex: 1.234,56)
+valor_formatado = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+# Data de hoje
+data_hoje = datetime.today().strftime("%d/%m/%Y")
+
+# ============================================
+# RECONSTRÓI O DOCX A PARTIR DO BASE64
+# ============================================
+
+dados_docx = base64.b64decode(base64_string)
+
+arquivo_memoria = BytesIO(dados_docx)
+
+doc = Document(arquivo_memoria)
+
+# ============================================
+# FUNÇÃO PARA SUBSTITUIR TEXTO
+# ============================================
+
+def substituir_texto(doc, marcador, valor):
+    
+    # Parágrafos normais
+    for p in doc.paragraphs:
+        if marcador in p.text:
+            for run in p.runs:
+                run.text = run.text.replace(marcador, valor)
+
+    # Tabelas
+    for tabela in doc.tables:
+        for linha in tabela.rows:
+            for celula in linha.cells:
+                for p in celula.paragraphs:
+                    if marcador in p.text:
+                        for run in p.runs:
+                            run.text = run.text.replace(marcador, valor)
+
+# ============================================
+# SUBSTITUIÇÕES
+# ============================================
+
+substituir_texto(doc, "[VALOR]", valor_formatado)
+substituir_texto(doc, "[DATA]", data_hoje)
+
+# ============================================
+# SALVA O RESULTADO
+# ============================================
+
+doc.save("resultado.docx")
+
+print("Documento gerado com sucesso!")
