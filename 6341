@@ -1,148 +1,496 @@
 import os
-import win32com.client
-import pandas as pd
 
-def buscar_emails_todas_pastas(pasta, titulo_x, titulo_y, melhor_x=None, melhor_y=None):
-    """
-    Função recursiva que varre a pasta atual e todas as suas subpastas
-    em busca dos e-mails mais recentes com os títulos X e Y.
-    """
-    try:
-        itens = pasta.Items
-        # Ordena os itens da pasta do mais recente para o mais antigo para otimizar
-        itens.Sort("[ReceivedTime]", True)
+from PIL import Image
+import config
+import tkinter as tk
+from tkinter import ttk, messagebox
+import customtkinter as ctk
+from logger import Logger
+import re
+import pandas as pd
+import win32com.client as win32
+from datetime import date, datetime
+import shutil
+import queue
+import threading
+
+class BTBView(ctk.CTkFrame):
+    #def __init__(self, parent, db_manager):
+    def __init__(self, parent):
+        super().__init__(parent, fg_color="transparent")
+
+        #self.db_manager = db_manager
+
+        self.log_queue = queue.Queue()
+        self.running = False
         
-        achou_x_na_pasta = False
-        achou_y_na_pasta = False
-        
-        for item in itens:
-            if item.Class == 43:  # 43 refere-se a MailItem (ignora convites de calendário, etc.)
+        self.corretora_var = tk.StringVar()
+
+        self.create_widgets()
+
+    def create_widgets(self):
+        # CABEÇALHO
+        header_frame = ctk.CTkFrame(self, fg_color="transparent")
+        header_frame.pack(fill="x", pady=(20, 10))
+
+        # Logo
+        logo_img = ctk.CTkImage(light_image=Image.open("intern/logo_itau.png"), size=(80, 80))
+        logo_label = ctk.CTkLabel(header_frame, image=logo_img, text="")
+        logo_label.pack(side="left", padx=20)
+
+        # Título
+        title_label = ctk.CTkLabel(header_frame, text="BTB - Banco Itaú", font=("Arial", 24, "bold"))
+        title_label.pack(side="left", padx=10)
+
+        # Linha divisória
+        linha_divisoria = ctk.CTkFrame(self, height=2, fg_color="black")
+        linha_divisoria.pack(fill="x", padx=20, pady=10)
+
+        # CONTEÚDO PRINCIPAL
+        main_frame = ctk.CTkFrame(self, fg_color="transparent")
+        main_frame.pack(fill="both", expand=True, padx=20)
+
+        # Botão centralizado
+        button_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        button_frame.pack(pady=(20, 20))
+
+        corretoras = ["Ágora", "Itaú"]
+        ctk.CTkLabel(button_frame, text='Produto').grid(row=0, column=0, sticky="w", padx=10)
+        ctk.CTkOptionMenu(button_frame, values=corretoras, variable=self.corretora_var, fg_color=config.AZUL, button_color=config.AZUL_HOVER, button_hover_color=config.AZUL_HOVER, dropdown_hover_color=config.AZUL_HOVER).grid(row=1, column=0, sticky="w", padx=10)
+
+        self.emails_button = ctk.CTkButton(button_frame, text="Ler e-mails", command=self.run, width=170, fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
+        self.emails_button.grid(row=1, column=1, sticky="w", padx=10)
+
+        # Log Frame
+        log_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        log_frame.pack(fill="both", expand=True)
+
+        ctk.CTkLabel(log_frame, text="Log de processos:", font=("Arial", 12)).pack(anchor="w", pady=(0, 5))
+        log_text = ctk.CTkTextbox(log_frame, font=("Arial", 12))
+        log_text.pack(fill="both", expand=True)
+
+        # Logger
+        self.logger = Logger()
+        self.logger.register_log_widget(log_text, after_owner=self, interval_ms=100)
+        self.logger.start_pumping()
+
+    def run(self):
+        try:
+            self.toggle_ui(True)
+
+            corretora = self.corretora_var.get()
+
+            if corretora == "Ágora":
+                threading.Thread(target=self.BTB_Agora, daemon=True).start()
+            
+            elif corretora == "Itaú":
+                threading.Thread(target=self.BTB_Itau, daemon=True).start()
+
+        except Exception as e:
+            self.logger.log(f"Erro: {e}")
+            self.toggle_ui(False)
+
+    def BTB_Agora(self):
+        try:
+            self.logger.log("Buscando os emails de BTB da Ágora. Isso pode levar alguns segundos...")
+
+            # Conectar ao Outlook
+            self.logger.log("Conectando ao Outlook...")
+            outlook = win32.Dispatch("Outlook.Application").GetNamespace("MAPI")
+
+            titulo_2028 = "39_AGORA V1 DE CORRETAGEM BTB - ITAU CUSTODIANTE 2028 em " + datetime.today().strftime("%d/%m/%Y")
+            titulo_4440 = "39_AGORA V1 DE CORRETAGEM BTB - ITAU CUSTODIANTE 4440 em" + datetime.today().strftime("%d/%m/%Y")
+
+            email_2028 = None
+            email_4440 = None
+
+            # Varre todas as contas/caixas de correio conectadas no seu Outlook
+            for conta in outlook.Folders:
+                pasta_raiz = conta
+                email_2028, email_4440 = self.buscar_emails_todas_pastas(pasta_raiz, titulo_2028, titulo_4440, email_2028, email_4440)
+
+                if email_2028 and email_4440:
+                    break
+            
+            if not email_2028 or not email_4440:
+                self.logger.log("Não foi possível encontrar ambos os e-mails (2028 e 4440) nas pastas do Outlook.")
+                return
+
+            self.logger.log("E-mail 2028 encontrado!")
+            self.logger.log("E-mail 4440 encontrado!")
+
+            # Lista para armazenar os caminhos temporários dos anexos
+            temp_paths = []
+            dfs = []
+
+            # Ler os anexos
+            for idx, email in enumerate([email_2028, email_4440]):
+                if email.Attachments.Count > 0:
+                    for attachment in email.Attachments:
+                        if attachment.FileName.endswith('.xls') or attachment.FileName.endswith('.xlsx'):
+                            temp_path = os.path.join(os.environ['TEMP'], attachment.FileName)
+                            attachment.SaveAsFile(temp_path)
+                            temp_paths.append(temp_path)
+
+                            # Ler o arquivo excel
+                            df_temp = pd.read_excel(temp_path)
+                            dfs.append(df_temp)
+                            break # Pega apenas o primeiro arquivo Excel do e-mail
+            
+            if len(dfs) < 2:
+                self.logger.log("Não foi possível encontrar arquivos Excel em ambos os e-mails.")
+                self.limpar_arquivos_temporarios(temp_paths)
+                return
+
+            # Concatenar os DataFrames
+            df_concat = pd.concat(dfs, ignore_index=True)
+
+            # Selecionar as colunas
+            colunas_necessarias = ["Conta Custódia", "Corretagem (R$)", "Custodiante"]
+            df_filtrado = df_concat[colunas_necessarias].copy()
+            df_filtrado.columns = ["CONTA", "CORRETAGEM", "CUSTODIANTE"]
+
+            # Agrupar e somar por CUSTODIANTE e CONTA
+            df_agrupado = df_filtrado.groupby(["CUSTODIANTE", "CONTA"], as_index=False)["CORRETAGEM"].sum()
+            df_ordenado = df_agrupado.sort_values(by=["CUSTODIANTE", "CORRETAGEM"], ascending=[True, False]).reset_index(drop=True)
+            df_ordenado["CORRETAGEM"] = df_ordenado["CORRETAGEM"].round(2)
+
+            # Pegar De-Para do banco
+            caminho = 'x'
+            df_depara = pd.read_excel(caminho, sheet_name='DEPARA', header=0)
+            df_depara.columns = ['cd_cblc', 'x', 'cd_sac', 'ambiente_processamento']
+            df_depara = df_depara.drop(columns=['x'])
+            df_depara = df_depara.dropna(subset=['cd_cblc', 'cd_sac', 'ambiente_processamento'])
+            df_depara['cd_cblc'] = df_depara["cd_cblc"].astype(int).astype(str)
+
+            df_depara = pd.read_sql_query("SELECT * FROM liq_BTB_BASE", con=self.db_manager.conn)
+
+            # Cruzar informações (merge)
+            df_resultado = pd.merge(df_ordenado, df_depara, on="CONTA", how="left")
+            df_resultado = df_resultado.fillna("-")
+
+            # Inserir data de liquidação
+            df_resultado.insert(0, "DATA DE LIQUIDAÇÃO", datetime.today().strftime("%d/%m/%Y"))
+            df_resultado.insert(1, "SISTEMA", "VALOR")
+            df_resultado.insert(2, "TIPO DE LANÇAMENTO", "DÉBITO")
+
+            # Salvar em Excel
+            output_folder = config.PATH_BTB
+            os.makedirs(output_folder, exist_ok=True)
+            output_excel_path = os.path.join(output_folder, "Arquivo_Final.xlsx")
+            df_resultado.to_excel(output_excel_path, index=False)
+
+            self.logger.log(f"Resultado salvo em: {output_excel_path}")
+
+            # Valores
+            soma_4440 = df_resultado[df_resultado["CUSTODIANTE"] == "4440"]["CORRETAGEM"].sum()
+            soma_2028 = df_resultado[df_resultado["CUSTODIANTE"] == "2028"]["CORRETAGEM"].sum()
+            total_geral = soma_4440 + soma_2028
+
+            soma_4440_fmt = f"{soma_4440:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            soma_2028_fmt = f"{soma_2028:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            total_geral_fmt = f"{total_geral:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+            # Gerar o email de resposta
+            reply = email_2028.ReplyAll()
+
+            corpo_email = f"""Prezados,
+
+Estamos pagando em NET: R$ {total_geral_fmt}
+
+4440: R$ {soma_4440_fmt}
+2028: R$ {soma_2028_fmt}
+"""
+
+            corpo_html = f"""
+            <html>
+            <body style="font-family: Calibri; font-size: 11pt;">
+            <p>Prezados,</p>
+            <br>
+            <p>Estamos pagando em NET: <strong>R$ {total_geral_fmt}</strong></p>
+            <p>4440: <strong>R$ {soma_4440_fmt}</strong><br>
+            2028: <strong>R$ {soma_2028_fmt}</strong></p>
+            <br>
+            <p>Atenciosamente,</p>
+            <br>
+            <div>
+                <strong style="color: #003366;">Itaú Unibanco</strong><br><br>
+                <strong>Controladoria e Custódia - Financeiro | Liquidação Inteligente</strong><br>
+                E-mail: <a href="mailto:liquidacao-itau@itau.com.br">liquidacao-itau@itau.com.br</a><br>
+                E-mail: <a href="mailto:liquidacao-clientes-itau@itau.com.br">liquidacao-clientes-itau@itau.com.br</a><br>
+                <br>
+                Av. do Estado, 5533 - 1º Andar - Cambuci - SP<br>
+                Cep: 03105-000 - São Paulo - SP
+            </div>
+            </body>
+            </html>
+            """
+
+            reply.Subject = f"Estamos pagando em NET: R$ {total_geral_fmt}"
+            reply.HTMLBody = corpo_html + reply.HTMLBody
+            reply.Display()
+
+            # Limpeza dos arquivos temporários
+            self.limpar_arquivos_temporarios(temp_paths)
+            self.logger.log("Processo 'Ágora' finalizado com sucesso!")
+
+        except Exception as e:
+            self.logger.log(f"Erro: {e}")
+        finally:
+            self.toggle_ui(False)
+
+    def limpar_arquivos_temporarios(self, temp_paths):
+        for file in temp_paths:
+            try:
+                os.remove(file)
+            except Exception as e:
+                self.logger.log(f"Não foi possível remover o arquivo temporário {file}: {e}")
+    
+    def BTB_Itau(self):
+        try:
+            self.logger.log("Buscando os emails de BTB da Ágora. Isso pode levar alguns segundos...")
+
+            # Conectar ao Outlook
+            self.logger.log("Conectando ao Outlook...")
+            outlook = win32.Dispatch("Outlook.Application").GetNamespace("MAPI")
+
+            titulo_2028 = "Aluguel - Batimento de Corretagem - Carrying Itaú - Custodiante Banco Itaú (2028) - " + datetime.today().strftime("%d/%m/%Y")
+            titulo_4440 = "Aluguel - Batimento de Corretagem - Carrying Itaú - Custodiante Banco Itaú (4440) - " + datetime.today().strftime("%d/%m/%Y")
+
+            email_2028 = None
+            email_4440 = None
+
+            # Varre todas as contas/caixas de correio conectadas no seu Outlook
+            for conta in outlook.Folders:
+                pasta_raiz = conta
+                email_2028, email_4440 = self.buscar_emails_todas_pastas(pasta_raiz, titulo_2028, titulo_4440, email_2028, email_4440)
+
+                if email_2028 and email_4440:
+                    break
+            
+            if not email_2028 or not email_4440:
+                self.logger.log("Não foi possível encontrar ambos os e-mails (2028 e 4440) nas pastas do Outlook.")
+                return
+
+            self.logger.log("E-mail 2028 encontrado!")
+            self.logger.log("E-mail 4440 encontrado!")
+
+            # Lista para armazenar os caminhos temporários dos anexos
+            temp_paths = []
+            dfs = []
+
+
+
+
+
+            # === NOVO === #
+
+            # Lista com os emails e seus respectivos custodiante
+            emails_info = [
+                (email_2028, '2028'),
+                (email_4440, '4440')
+            ]
+
+            # Ler os anexos
+            for email, custodiante in emails_info:
+                if email.Attachments.Count > 0:
+                    for attachment in email.Attachments:
+                        if attachment.FileName.endswith('.xls') or attachment.FileName.endswith('.xlsx'):
+                            temp_path = os.path.join(os.environ['TEMP'], attachment.FileName)
+                            attachment.SaveAsFile(temp_path)
+                            temp_paths.append(temp_path)
+
+                            # Ler o arquivo excel
+                            df_temp = pd.read_excel(temp_path)
+
+                            # Adiciona a coluna CUSTODIANTE
+                            df_temp['custodiante'] = custodiante
+
+                            dfs.append(df_temp)
+                            break  # Pega apenas o primeiro arquivo Excel do e-mail
+            
+            # === NOVO === #
+
+
+
+
+
+
+            
+            if len(dfs) < 2:
+                self.logger.log("Não foi possível encontrar arquivos Excel em ambos os e-mails.")
+                self.limpar_arquivos_temporarios(temp_paths)
+                return
+
+            # Concatenar os DataFrames
+            df_concat = pd.concat(dfs, ignore_index=True)
+
+            # Selecionar as colunas
+            colunas_necessarias = ["CCI Itaú", "CNPJ", "Corretagem (R$)", 'custodiante']
+            df_filtrado = df_concat[colunas_necessarias].copy()
+            df_filtrado.columns = ["cci", "cnpj", "corretagem", "custodiante"]
+
+            # Agrupar e somar por CUSTODIANTE e CONTA
+            df_agrupado = df_filtrado.groupby(["cci", "cnpj", "custodiante"], as_index=False)["corretagem"].sum()
+            df_ordenado = df_agrupado.sort_values(by=["custodiante", "corretagem"], ascending=[True, False]).reset_index(drop=True)
+
+
+            # Pegar De-Para do banco
+            caminho = 'x'
+            df_depara = pd.read_excel(caminho, sheet_name='DEPARA', header=0)
+            df_depara = df_depara.iloc[:, [0, 1, 2, 3, 5]]
+            df_depara.columns = ['x', 'cci', 'cnpj', 'sac', 'amb']
+            df_depara = df_depara.drop(columns=['x'])
+            df_depara = df_depara.dropna(subset=['cci', 'cnpj', 'sac', 'amb'])
+
+            #df_depara = pd.read_sql_query("SELECT * FROM liq_BTB_BASE", con=self.db_manager.conn)
+
+            # Cruzar informações (merge)
+            # Primeiro merge por CCI
+            df_resultado = pd.merge(
+                df_ordenado,
+                df_depara,
+                on='cci',
+                how='left',
+                suffixes=('', '_depara')
+            )
+
+            # Identifica os que não encontraram SAC
+            mask_nao_encontrado = df_resultado['sac'].isna()
+
+            # Segundo merge apenas para os não encontrados, usando CNPJ
+            df_fallback = pd.merge(
+                df_resultado.loc[mask_nao_encontrado, ['cci', 'cnpj', 'corretagem', 'custodiante']],
+                df_depara,
+                on='cnpj',
+                how='left',
+                suffixes=('', '_cnpj')
+            )
+
+            # Atualiza os valores faltantes
+            for col in ['sac', 'amb']:
+                df_resultado.loc[mask_nao_encontrado, col] = df_fallback[col].values
+
+            # Inserir data de liquidação
+            df_resultado.insert(0, "DATA DE LIQUIDAÇÃO", datetime.today().strftime("%d/%m/%Y"))
+            df_resultado.insert(1, "SISTEMA", "VALOR")
+            df_resultado.insert(2, "TIPO DE LANÇAMENTO", "DÉBITO")
+
+            # Salvar em Excel
+            output_folder = config.PATH_BTB
+            os.makedirs(output_folder, exist_ok=True)
+            output_excel_path = os.path.join(output_folder, "Arquivo_Final.xlsx")
+            df_resultado.to_excel(output_excel_path, index=False)
+
+            self.logger.log(f"Resultado salvo em: {output_excel_path}")
+
+            # Valores
+            soma_4440 = df_resultado[df_resultado["CUSTODIANTE"] == "4440"]["CORRETAGEM"].sum()
+            soma_2028 = df_resultado[df_resultado["CUSTODIANTE"] == "2028"]["CORRETAGEM"].sum()
+            total_geral = soma_4440 + soma_2028
+
+            soma_4440_fmt = f"{soma_4440:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            soma_2028_fmt = f"{soma_2028:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            total_geral_fmt = f"{total_geral:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+            # Gerar o email de resposta
+            reply = email_2028.ReplyAll()
+
+            corpo_email = f"""Prezados,
+
+Estamos pagando em NET: R$ {total_geral_fmt}
+
+4440: R$ {soma_4440_fmt}
+2028: R$ {soma_2028_fmt}
+"""
+
+            corpo_html = f"""
+            <html>
+            <body style="font-family: Calibri; font-size: 11pt;">
+            <p>Prezados,</p>
+            <br>
+            <p>Estamos pagando em NET: <strong>R$ {total_geral_fmt}</strong></p>
+            <p>4440: <strong>R$ {soma_4440_fmt}</strong><br>
+            2028: <strong>R$ {soma_2028_fmt}</strong></p>
+            <br>
+            <p>Atenciosamente,</p>
+            <br>
+            <div>
+                <strong style="color: #003366;">Itaú Unibanco</strong><br><br>
+                <strong>Controladoria e Custódia - Financeiro | Liquidação Inteligente</strong><br>
+                E-mail: <a href="mailto:liquidacao-itau@itau.com.br">liquidacao-itau@itau.com.br</a><br>
+                E-mail: <a href="mailto:liquidacao-clientes-itau@itau.com.br">liquidacao-clientes-itau@itau.com.br</a><br>
+                <br>
+                Av. do Estado, 5533 - 1º Andar - Cambuci - SP<br>
+                Cep: 03105-000 - São Paulo - SP
+            </div>
+            </body>
+            </html>
+            """
+
+            reply.Subject = f"Estamos pagando em NET: R$ {total_geral_fmt}"
+            reply.HTMLBody = corpo_html + reply.HTMLBody
+            reply.Display()
+
+            # Limpeza dos arquivos temporários
+            self.limpar_arquivos_temporarios(temp_paths)
+            self.logger.log("Processo 'Ágora' finalizado com sucesso!")
+
+        except Exception as e:
+            self.logger.log(f"Erro: {e}")
+        finally:
+            self.toggle_ui(False)
+
+    def buscar_emails_todas_pastas(self, pasta, titulo_x, titulo_y, melhor_x, melhor_y):
+        """
+        Função recursiva que varre a pasta atual e todas as suas subpastas
+        em busca dos e-mails mais recentes com os títulos X e Y.
+        """
+        try:
+            itens = pasta.Items
+            # Ordena os itens da pasta do mais recente para o mais antigo para otimizar
+            itens.Sort("[ReceivedTime]", True)
+
+            achou_x_na_pasta = False
+            achou_y_na_pasta = False
+
+            for item in itens:
+                # 43=MailItem (ignora convites de calendário, etc.)
+                if item.Class == 43:
+                    # Verifica e-mail X
+                    if not achou_x_na_pasta and titulo_x in item.Subject:
+                        if melhor_x is None or item.ReceivedTime > melhor_x.ReceivedTime:
+                            melhor_x = item
+                        achou_x_na_pasta = True # Como a pasta está ordenada, o primeiro que achar aqui é o mais novo desta pasta
+                    
+                    # Verifica e-mail Y
+                    if not achou_y_na_pasta and titulo_y in item.Subject:
+                        if melhor_y is None or item.ReceivedTime > melhor_y.ReceivedTime:
+                            melhor_y = item
+                        achou_y_na_pasta = True
                 
-                # Verifica E-mail X
-                if not achou_x_na_pasta and titulo_x in item.Subject:
-                    if melhor_x is None or item.ReceivedTime > melhor_x.ReceivedTime:
-                        melhor_x = item
-                    achou_x_na_pasta = True # Como a pasta está ordenada, o primeiro que achar aqui é o mais novo desta pasta
-                
-                # Verifica E-mail Y
-                if not achou_y_na_pasta and titulo_y in item.Subject:
-                    if melhor_y is None or item.ReceivedTime > melhor_y.ReceivedTime:
-                        melhor_y = item
-                    achou_y_na_pasta = True
-                
-                # Se já achou o mais recente de ambos nesta pasta, pode parar de olhar os itens mais antigos dela
+                # Se já achou os mais recentes de ambas nesta pasta, pode parar de olhar os itens mais antigos dela
                 if achou_x_na_pasta and achou_y_na_pasta:
                     break
 
-    except Exception:
-        # Algumas pastas de sistema do Outlook não permitem leitura direta, ignoramos silenciosamente
-        pass
+        except Exception:
+            # Algumas pastas de sistema do Outlook não permitem leitura direta, ignoramos silenciosamente
+            pass
 
-    # Varre as subpastas recursivamente
-    try:
-        for subpasta in pasta.Folders:
-            melhor_x, melhor_y = buscar_emails_todas_pastas(subpasta, titulo_x, titulo_y, melhor_x, melhor_y)
-    except Exception:
-        pass
-
-    return melhor_x, melhor_y
-
-
-def process_emails_and_generate_report():
-    print("Iniciando varredura em todas as pastas do Outlook. Isso pode levar alguns segundos...")
-    
-    # 1. Conectar ao Outlook
-    outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
-    
-    titulo_x = "X"
-    titulo_y = "Y"
-    
-    email_x = None
-    email_y = None
-
-    # Varre todas as contas/caixas de correio conectadas no seu Outlook
-    for store in outlook.Stores:
-        pasta_raiz = store.GetRootFolder()
-        email_x, email_y = buscar_emails_todas_pastas(pasta_raiz, titulo_x, titulo_y, email_x, email_y)
-
-    if not email_x or not email_y:
-        print("Não foi possível encontrar ambos os e-mails (X e Y) nas pastas do Outlook.")
-        return
-
-    print(f"E-mail X encontrado! Data: {email_x.ReceivedTime}")
-    print(f"E-mail Y encontrado! Data: {email_y.ReceivedTime}")
-
-    # Lista para armazenar os caminhos temporários dos anexos
-    temp_files = []
-    dfs = []
-
-    # 2. Baixar e ler os anexos
-    for idx, email in enumerate([email_x, email_y]):
-        if email.Attachments.Count > 0:
-            for attachment in email.Attachments:
-                if attachment.FileName.endswith('.xlsx') or attachment.FileName.endswith('.xls'):
-                    temp_path = os.path.join(os.getcwd(), f"temp_anexo_{idx}_{attachment.FileName}")
-                    attachment.SaveAsFile(temp_path)
-                    temp_files.append(temp_path)
-                    
-                    # Ler o arquivo Excel
-                    df_temp = pd.read_excel(temp_path)
-                    dfs.append(df_temp)
-                    break # Pega apenas o primeiro arquivo Excel do e-mail
-
-    if len(dfs) < 2:
-        print("Não foi possível encontrar anexos Excel em ambos os e-mails.")
-        return
-
-    # 3. Concatenar os dataframes
-    df_concat = pd.concat(dfs, ignore_index=True)
-
-    # 4. Tratar o dataframe
-    colunas_necessarias = ["Conta Custódia", "Corretagem (R$)", "X", "Z"]
-    df_filtrado = df_concat[colunas_necessarias].copy()
-
-    df_agrupado = df_filtrado.groupby(["Conta Custódia", "Z", "X"], as_index=False)["Corretagem (R$)"].sum()
-    df_ordenado = df_agrupado.sort_values(by=["X", "Conta Custódia"]).reset_index(drop=True)
-
-    # Substitua este bloco pelo carregamento do seu arquivo de depara real
-    df_depara = pd.DataFrame({
-        "Conta Custódia": df_ordenado["Conta Custódia"].unique(),
-        "Nova_Coluna_Depara": [f"Desc_{c}" for c in df_ordenado["Conta Custódia"].unique()]
-    })
-
-    df_resultado = pd.merge(df_ordenado, df_depara, on="Conta Custódia", how="left")
-
-    # Escrever o resultado
-    output_excel_path = os.path.join(os.getcwd(), "resultado_consolidado.xlsx")
-    df_resultado.to_excel(output_excel_path, index=False)
-    print(f"Resultado salvo em: {output_excel_path}")
-
-    # Somar valores específicos de Z
-    df_resultado['Z_str'] = df_resultado['Z'].astype(str)
-    
-    soma_4440 = df_resultado[df_resultado['Z_str'] == '4440']['Corretagem (R$)'].sum()
-    soma_2028 = df_resultado[df_resultado['Z_str'] == '2028']['Corretagem (R$)'].sum()
-    total_geral = soma_4440 + soma_2028
-
-    # 5. Gerar e-mail de resposta
-    outlook_app = win32com.client.Dispatch("Outlook.Application")
-    new_mail = outlook_app.CreateItem(0)
-    new_mail.Subject = "Relatório Consolidado de Corretagem"
-    new_mail.To = "destinatario@exemplo.com"
-    
-    corpo_email = f"""4440: R$ {soma_4440:,.2f}
-2028: R$ {soma_2028:,.2f}
-total: R$ {total_geral:,.2f}"""
-
-    new_mail.Body = corpo_email
-    new_mail.Display()
-
-    # Limpeza dos arquivos temporários
-    for file in temp_files:
+        # Varre as subpastas recursivamente
         try:
-            os.remove(file)
-        except Exception as e:
-            print(f"Aviso: Não foi possível remover o arquivo temporário {file}: {e}")
+            for subpasta in pasta.Folders:
+                melhor_x, melhor_y = self.buscar_emails_todas_pastas(subpasta, titulo_x, titulo_y, melhor_x, melhor_y)
+        except Exception:
+            pass
 
-if __name__ == "__main__":
-    process_emails_and_generate_report()
+        return melhor_x, melhor_y
+
+    def toggle_ui(self, running: bool):
+        """Habilita/Desabilita elementos da UI durante o processamento."""
+        if running:
+            self.emails_button.configure(state="disabled")
+            self.corretora_menu.configure(state="disabled")
+        else:
+            self.emails_button.configure(state="normal")
+            self.corretora_menu.configure(state="normal")
