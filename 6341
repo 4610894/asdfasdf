@@ -1,71 +1,101 @@
-from io import BytesIO
-from datetime import datetime
-import base64
+import os
 
-from docx import Document
+from PIL import Image
+import config
+import tkinter as tk
+from tkinter import ttk, messagebox
+import customtkinter as ctk
+from logger import Logger
+import re
+import pandas as pd
+import win32com.client as win32
+from datetime import date, datetime
+import shutil
+import queue
+import threading
 
-# ============================================
-# COLE AQUI O BASE64 DO SEU MODELO .DOCX
-# ============================================
+class STRview(ctk.CTkFrame):
+    #def __init__(self, parent, db_manager):
+    def __init__(self, parent):
+        super().__init__(parent, fg_color="transparent")
 
-base64_string = """
-COLE_SEU_BASE64_AQUI
-"""
+        #self.db_manager = db_manager
 
-# ============================================
-# ENTRADA DO USUÁRIO
-# ============================================
+        self.log_queue = queue.Queue()
+        self.running = False
+        
+        self.destinatario_var = tk.StringVar()
+        self.valor_var = tk.StringVar()
 
-valor = float(input("Digite o valor: "))
+        self.create_widgets()
 
-# Formata o valor (ex: 1.234,56)
-valor_formatado = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    def create_widgets(self):
+        # CABEÇALHO
+        header_frame = ctk.CTkFrame(self, fg_color="transparent")
+        header_frame.pack(fill="x", pady=(20, 10))
 
-# Data de hoje
-data_hoje = datetime.today().strftime("%d/%m/%Y")
+        # Logo
+        logo_img = ctk.CTkImage(light_image=Image.open("intern/logo_itau.png"), size=(80, 80))
+        logo_label = ctk.CTkLabel(header_frame, image=logo_img, text="")
+        logo_label.pack(side="left", padx=20)
 
-# ============================================
-# RECONSTRÓI O DOCX A PARTIR DO BASE64
-# ============================================
+        # Título
+        title_label = ctk.CTkLabel(header_frame, text="STR", font=("Arial", 24, "bold"))
+        title_label.pack(side="left", padx=10)
 
-dados_docx = base64.b64decode(base64_string)
+        # Linha divisória
+        linha_divisoria = ctk.CTkFrame(self, height=2, fg_color="black")
+        linha_divisoria.pack(fill="x", padx=20, pady=10)
 
-arquivo_memoria = BytesIO(dados_docx)
+        # CONTEÚDO PRINCIPAL
+        main_frame = ctk.CTkFrame(self, fg_color="transparent")
+        main_frame.pack(fill="both", expand=True, padx=20)
 
-doc = Document(arquivo_memoria)
+        # Botão centralizado
+        button_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        button_frame.pack(pady=(20, 20))
 
-# ============================================
-# FUNÇÃO PARA SUBSTITUIR TEXTO
-# ============================================
+        corretoras = ["A", "B", "C"]
+        ctk.CTkLabel(button_frame, text='Destinatário').grid(row=0, column=0, sticky="w", padx=10)
+        ctk.CTkOptionMenu(button_frame, values=corretoras, variable=self.destinatario_var, width=170, fg_color=config.AZUL, button_color=config.AZUL_HOVER, button_hover_color=config.AZUL_HOVER, dropdown_hover_color=config.AZUL_HOVER).grid(row=1, column=0, sticky="w", padx=10)
 
-def substituir_texto(doc, marcador, valor):
-    
-    # Parágrafos normais
-    for p in doc.paragraphs:
-        if marcador in p.text:
-            for run in p.runs:
-                run.text = run.text.replace(marcador, valor)
+        ctk.CTkLabel(button_frame, text='Valor: ').grid(row=0, column=1, sticky="w", padx=10)
+        ctk.CTkEntry(button_frame, textvariable=self.valor_var, font=("Arial", 12), width=170, border_color=config.AZUL).grid(row=1, column=1, sticky='w', padx=(0, 10))
 
-    # Tabelas
-    for tabela in doc.tables:
-        for linha in tabela.rows:
-            for celula in linha.cells:
-                for p in celula.paragraphs:
-                    if marcador in p.text:
-                        for run in p.runs:
-                            run.text = run.text.replace(marcador, valor)
+        self.emails_button = ctk.CTkButton(button_frame, text="Gerar STR0004", command=self._run, width=140, fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
+        self.emails_button.grid(row=1, column=2, sticky="w", padx=10)
 
-# ============================================
-# SUBSTITUIÇÕES
-# ============================================
+        # Log Frame
+        log_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        log_frame.pack(fill="both", expand=True)
 
-substituir_texto(doc, "[VALOR]", valor_formatado)
-substituir_texto(doc, "[DATA]", data_hoje)
+        ctk.CTkLabel(log_frame, text="Log de processos:", font=("Arial", 12)).pack(anchor="w", pady=(0, 5))
+        log_text = ctk.CTkTextbox(log_frame, font=("Arial", 12))
+        log_text.pack(fill="both", expand=True)
 
-# ============================================
-# SALVA O RESULTADO
-# ============================================
+        # Logger
+        self.logger = Logger()
+        self.logger.register_log_widget(log_text, after_owner=self, interval_ms=100)
+        self.logger.start_pumping()
 
-doc.save("resultado.docx")
+    def _run(self):
+        try:
+            outlook = win32.Dispatch("Outlook.Application")
+            mail = outlook.CreateItem(0)
 
-print("Documento gerado com sucesso!")
+            destinatario = self.destinatario_var.get()
+
+            mail.Subject = f"Solicitação STR004 - {destinatario}"
+
+            mail.Body = (
+                f"Solicitamos o envio da STR004 a favor do {destinatario} "
+                f"devido o nosso sistema ter encerrado a grade para envio de TED."
+            )
+
+            # Exibe o email no Outlook
+            mail.Display()
+
+            self.logger.log("Email gerado com sucesso.")
+
+        except Exception as e:
+            self.logger.log(f"Erro ao gerar email: {e}")
