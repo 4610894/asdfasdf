@@ -1,101 +1,40 @@
-import os
+import win32com.client
+from datetime import datetime
 
-from PIL import Image
-import config
-import tkinter as tk
-from tkinter import ttk, messagebox
-import customtkinter as ctk
-from logger import Logger
-import re
-import pandas as pd
-import win32com.client as win32
-from datetime import date, datetime
-import shutil
-import queue
-import threading
-
-class STRview(ctk.CTkFrame):
-    #def __init__(self, parent, db_manager):
-    def __init__(self, parent):
-        super().__init__(parent, fg_color="transparent")
-
-        #self.db_manager = db_manager
-
-        self.log_queue = queue.Queue()
-        self.running = False
-        
-        self.destinatario_var = tk.StringVar()
-        self.valor_var = tk.StringVar()
-
-        self.create_widgets()
-
-    def create_widgets(self):
-        # CABEÇALHO
-        header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        header_frame.pack(fill="x", pady=(20, 10))
-
-        # Logo
-        logo_img = ctk.CTkImage(light_image=Image.open("intern/logo_itau.png"), size=(80, 80))
-        logo_label = ctk.CTkLabel(header_frame, image=logo_img, text="")
-        logo_label.pack(side="left", padx=20)
-
-        # Título
-        title_label = ctk.CTkLabel(header_frame, text="STR", font=("Arial", 24, "bold"))
-        title_label.pack(side="left", padx=10)
-
-        # Linha divisória
-        linha_divisoria = ctk.CTkFrame(self, height=2, fg_color="black")
-        linha_divisoria.pack(fill="x", padx=20, pady=10)
-
-        # CONTEÚDO PRINCIPAL
-        main_frame = ctk.CTkFrame(self, fg_color="transparent")
-        main_frame.pack(fill="both", expand=True, padx=20)
-
-        # Botão centralizado
-        button_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        button_frame.pack(pady=(20, 20))
-
-        corretoras = ["A", "B", "C"]
-        ctk.CTkLabel(button_frame, text='Destinatário').grid(row=0, column=0, sticky="w", padx=10)
-        ctk.CTkOptionMenu(button_frame, values=corretoras, variable=self.destinatario_var, width=170, fg_color=config.AZUL, button_color=config.AZUL_HOVER, button_hover_color=config.AZUL_HOVER, dropdown_hover_color=config.AZUL_HOVER).grid(row=1, column=0, sticky="w", padx=10)
-
-        ctk.CTkLabel(button_frame, text='Valor: ').grid(row=0, column=1, sticky="w", padx=10)
-        ctk.CTkEntry(button_frame, textvariable=self.valor_var, font=("Arial", 12), width=170, border_color=config.AZUL).grid(row=1, column=1, sticky='w', padx=(0, 10))
-
-        self.emails_button = ctk.CTkButton(button_frame, text="Gerar STR0004", command=self._run, width=140, fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
-        self.emails_button.grid(row=1, column=2, sticky="w", padx=10)
-
-        # Log Frame
-        log_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        log_frame.pack(fill="both", expand=True)
-
-        ctk.CTkLabel(log_frame, text="Log de processos:", font=("Arial", 12)).pack(anchor="w", pady=(0, 5))
-        log_text = ctk.CTkTextbox(log_frame, font=("Arial", 12))
-        log_text.pack(fill="both", expand=True)
-
-        # Logger
-        self.logger = Logger()
-        self.logger.register_log_widget(log_text, after_owner=self, interval_ms=100)
-        self.logger.start_pumping()
-
-    def _run(self):
+def listar_emails_hoje():
+    # 1. Conecta ao aplicativo Outlook
+    outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+    
+    # 2. Seleciona a Caixa de Entrada (6 é o código interno para Inbox)
+    inbox = outlook.GetDefaultFolder(6)
+    mensagens = inbox.Items
+    
+    # 3. Ordena pela ordem de chegada (False = do mais antigo para o mais novo)
+    mensagens.Sort("[ReceivedTime]", False)
+    
+    # 4. Cria o filtro para pegar apenas os e-mails de hoje
+    hoje = datetime.now().strftime('%d/%m/%Y')
+    filtro = f"[ReceivedTime] >= '{hoje}'"
+    
+    # Aplica o filtro
+    mensagens_hoje = mensagens.Restrict(filtro)
+    
+    print(f"--- E-mails recebidos hoje ({hoje}) ---\n")
+    
+    contador = 0
+    # 5. Percorre os e-mails filtrados e printa o assunto
+    for msg in mensagens_hoje:
         try:
-            outlook = win32.Dispatch("Outlook.Application")
-            mail = outlook.CreateItem(0)
+            # Formata a hora para ficar fácil de ler
+            hora_chegada = msg.ReceivedTime.strftime('%H:%M')
+            print(f"[{hora_chegada}] {msg.Subject}")
+            contador += 1
+        except Exception:
+            # Ignora itens da caixa de entrada que não são e-mails normais (ex: convites de reunião em branco)
+            continue
+            
+    if contador == 0:
+        print("Nenhum e-mail recebido hoje até o momento.")
 
-            destinatario = self.destinatario_var.get()
-
-            mail.Subject = f"Solicitação STR004 - {destinatario}"
-
-            mail.Body = (
-                f"Solicitamos o envio da STR004 a favor do {destinatario} "
-                f"devido o nosso sistema ter encerrado a grade para envio de TED."
-            )
-
-            # Exibe o email no Outlook
-            mail.Display()
-
-            self.logger.log("Email gerado com sucesso.")
-
-        except Exception as e:
-            self.logger.log(f"Erro ao gerar email: {e}")
+if __name__ == "__main__":
+    listar_emails_hoje()
