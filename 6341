@@ -100,3 +100,119 @@ class STRview(ctk.CTkFrame):
         resultado = f"C:/YMF/CAMBIO/Resultado {meses[datetime.now().month]} {datetime.now().year}.xlsx"
         df.to_excel(resultado, index=False)
         self.logger.log(f"Arquivo salvo em: {resultado}")
+
+# ===============================================================================================================================================================#
+
+
+
+import customtkinter as ctk
+import win32com.client
+
+def get_outlook_folders():
+    """
+    Conecta ao Outlook e retorna uma lista com o caminho de todas as pastas e subpastas.
+    """
+    try:
+        outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+        folders_list = []
+
+        # Função recursiva para pegar subpastas dentro de pastas
+        def map_subfolders(folder, path=""):
+            for subfolder in folder.Folders:
+                # Monta o caminho da pasta (ex: Caixa de Entrada/Projetos)
+                current_path = f"{path}/{subfolder.Name}" if path else subfolder.Name
+                folders_list.append(current_path)
+                # Chama a recursão para caso a subpasta tenha mais subpastas
+                map_subfolders(subfolder, current_path)
+
+        # Iterar pelas contas (Stores) configuradas no Outlook
+        for store in outlook.Stores:
+            root_folder = store.GetRootFolder()
+            # Começa a mapear a partir da raiz da conta
+            map_subfolders(root_folder, root_folder.Name)
+            
+        return folders_list
+    except Exception as e:
+        print(f"Erro ao acessar o Outlook: {e}")
+        return []
+
+class EmailSearchApp(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+
+        self.title("Buscador de Emails no Outlook")
+        self.geometry("450x250")
+        
+        # Centralizando os elementos na tela
+        self.grid_columnconfigure(0, weight=1)
+
+        # 1. Carregar as pastas do Outlook
+        self.label_info = ctk.CTkLabel(self, text="Carregando pastas do Outlook...", text_color="gray")
+        self.label_info.grid(row=0, column=0, pady=(20, 5))
+        self.update() # Força a atualização da tela antes de travar com a busca do Outlook
+        
+        pastas_outlook = get_outlook_folders()
+        self.opcoes_combobox = ["Todas Pastas"] + pastas_outlook
+        
+        self.label_info.configure(text="Selecione a pasta para realizar a busca:")
+
+        # 2. Criar a variável e a ComboBox
+        self.pasta_selecionada = ctk.StringVar(value="Todas Pastas")
+        
+        self.combobox = ctk.CTkComboBox(
+            self, 
+            values=self.opcoes_combobox, 
+            variable=self.pasta_selecionada,
+            width=300,
+            state="readonly" # Impede o usuário de digitar um nome de pasta que não existe
+        )
+        self.combobox.grid(row=1, column=0, pady=(10, 20))
+
+        # 3. Botão de Busca
+        self.btn_buscar = ctk.CTkButton(
+            self, 
+            text="Iniciar Varredura", 
+            command=self.iniciar_busca,
+            fg_color="#1f538d",
+            hover_color="#14375e"
+        )
+        self.btn_buscar.grid(row=2, column=0, pady=10)
+
+    def iniciar_busca(self):
+        # Esta é a função chamada quando o botão é clicado
+        pasta_alvo = self.pasta_selecionada.get()
+        
+        if pasta_alvo == "Todas Pastas":
+            print("Iniciando varredura em: TODAS AS PASTAS (Atenção: Processo demorado)")
+            # Cole sua lógica de varredura completa aqui
+        else:
+            print(f"Iniciando varredura apenas na pasta: {pasta_alvo}")
+            # Cole sua lógica de varredura específica da pasta aqui
+            
+            # DICA: Para acessar a pasta específica no win32com a partir do caminho retornado:
+            # path_parts = pasta_alvo.split('/')
+            # folder = outlook.Stores[...].GetRootFolder()
+            # for part in path_parts[1:]:
+            #     folder = folder.Folders(part)
+
+if __name__ == "__main__":
+    # Configuração de tema do CustomTkinter (opcional)
+    ctk.set_appearance_mode("System")  # "System", "Dark", "Light"
+    ctk.set_default_color_theme("blue")
+    
+    app = EmailSearchApp()
+    app.mainloop()
+
+
+
+# JEITO LENTO
+for email in folder.Items:
+    if email.Subject == "Assunto Procurado":
+        # faz algo
+
+# Aplica um filtro direto na fonte (muito mais rápido)
+filtro = "@SQL=urn:schemas:httpmail:subject LIKE '%Assunto Procurado%'"
+emails_filtrados = folder.Items.Restrict(filtro)
+
+for email in emails_filtrados:
+    print("Achei o email:", email.Subject)
