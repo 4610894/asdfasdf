@@ -216,3 +216,284 @@ emails_filtrados = folder.Items.Restrict(filtro)
 
 for email in emails_filtrados:
     print("Achei o email:", email.Subject)
+
+
+===============================================================================
+
+
+
+
+from PIL import Image
+import config
+import tkinter as tk
+import customtkinter as ctk
+from logger import Logger
+from tkinter import filedialog
+import pandas as pd
+from datetime import datetime
+
+import customtkinter as ctk
+from tkinter import ttk
+from tkinter import messagebox
+
+class EmailsCorretorasview(ctk.CTkFrame):
+    def __init__(self, parent):
+        #def __init__(self, parent, db_manager):
+        super().__init__(parent, fg_color="transparent")
+
+        #self.db_manager = db_manager
+        
+        self.create_widgets()
+    def create_widgets(self):
+        # CABEÇALHO
+        header_frame = ctk.CTkFrame(self, fg_color="transparent")
+        header_frame.pack(fill="x", pady=(20, 10))
+
+        # Logo
+        logo_img = ctk.CTkImage(light_image=Image.open("intern/logo_itau.png"), size=(80, 80))
+        logo_label = ctk.CTkLabel(header_frame, image=logo_img, text="")
+        logo_label.pack(side="left", padx=20)
+
+        # Título
+        title_label = ctk.CTkLabel(header_frame, text="E-mails Corretoras", font=("Arial", 24, "bold"))
+        title_label.pack(side="left", padx=10)
+
+        # Linha divisória
+        linha_divisoria = ctk.CTkFrame(self, height=2, fg_color="black")
+        linha_divisoria.pack(fill="x", padx=20, pady=10)
+
+        # CONTEÚDO PRINCIPAL
+        main_frame = ctk.CTkFrame(self, fg_color="transparent")
+        main_frame.pack(fill="both", expand=True, padx=20)
+
+        # Botão centralizado
+        button_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        button_frame.pack(pady=(20, 20))
+
+        self.emails_button = ctk.CTkButton(button_frame, text="Gerar emails", command=self._run, width=140, fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
+        self.emails_button.grid(row=0, column=0, sticky="w", padx=10)
+
+        self.gerenciar_button = ctk.CTkButton(button_frame, text="Gerenciar cadastros", command=self._gerenciar, width=140, fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
+        self.gerenciar_button.grid(row=0, column=1, sticky="w", padx=10)
+
+        # Log Frame
+        log_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        log_frame.pack(fill="both", expand=True)
+
+        ctk.CTkLabel(log_frame, text="Log de processos:", font=("Arial", 12)).pack(anchor="w", pady=(0, 5))
+        log_text = ctk.CTkTextbox(log_frame, font=("Arial", 12))
+        log_text.pack(fill="both", expand=True)
+
+        # Logger
+        self.logger = Logger()
+        self.logger.register_log_widget(log_text, after_owner=self, interval_ms=100)
+        self.logger.start_pumping()
+    def _run(self):
+        return
+    def _gerenciar(self):
+        if not hasattr(self, "janela_gerenciador") or not self.janela_gerenciador.winfo_exists():
+            self.janela_gerenciador = GerenciadorEmails(self, self.db_manager)
+        else:
+            self.janela_gerenciador.focus()
+
+
+class GerenciadorEmails(ctk.CTkToplevel):
+    def __init__(self, master, db_manager):
+        super().__init__(master)
+        self.title("Gerenciar Emails de Corretoras")
+        self.geometry("600x450")
+        self.transient(master)
+        
+        self.db_manager = db_manager
+
+        # --- Estilização do Treeview ---
+        style = ttk.Style(self)
+        style.theme_use("default")
+        style.configure("Treeview", 
+                        background="#2b2b2b", 
+                        foreground="white", 
+                        rowheight=25, 
+                        fieldbackground="#2b2b2b", 
+                        borderwidth=0)
+        style.map('Treeview', background=[('selected', '#1f538d')])
+        style.configure("Treeview.Heading", 
+                        background="#1f538d", 
+                        foreground="white", 
+                        relief="flat",
+                        font=("Arial", 11, "bold"))
+        style.map("Treeview.Heading", background=[('active', '#14375e')])
+
+        # Layout: Treeview e Scrollbar
+        self.frame_lista = ctk.CTkFrame(self)
+        self.frame_lista.pack(fill="both", expand=True, padx=20, pady=(20, 10))
+
+        colunas = ("corretora", "email")
+        self.tree = ttk.Treeview(self.frame_lista, columns=colunas, show="headings", selectmode="browse")
+        self.tree.heading("corretora", text="Corretora", anchor="w")
+        self.tree.heading("email", text="Email", anchor="w")
+        self.tree.column("corretora", width=150)
+        self.tree.column("email", width=350)
+
+        scrollbar = ttk.Scrollbar(self.frame_lista, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        
+        self.tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Layout: Botões Inferiores
+        self.frame_botoes = ctk.CTkFrame(self, fg_color="transparent")
+        self.frame_botoes.pack(fill="x", padx=20, pady=(0, 20))
+
+        self.btn_novo = ctk.CTkButton(self.frame_botoes, text="Inserir Novo", command=self.abrir_inserir)
+        self.btn_novo.pack(side="left", expand=True, padx=10)
+
+        self.btn_editar = ctk.CTkButton(self.frame_botoes, text="Editar Selecionado", command=self.abrir_editar)
+        self.btn_editar.pack(side="right", expand=True, padx=10)
+
+        # Carrega os dados ao iniciar a janela
+        self.carregar_dados()
+    def carregar_dados(self):
+        # Limpa o treeview atual para evitar duplicação visual
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+            
+        try:
+            conn = self.db_manager.conn
+            cursor = conn.cursor()
+            cursor.execute("SELECT corretora, email FROM liq.EMAILS_CORRETORAS ORDER BY corretora ASC")
+            registros = cursor.fetchall()
+            
+            for row in registros:
+                self.tree.insert("", "end", values=(row[0], row[1]))
+        except Exception as e:
+            messagebox.showerror("Erro de Leitura", f"Não foi possível carregar os dados: {str(e)}")
+    def abrir_inserir(self):
+        FormularioEmail(self, self.db_manager, self.carregar_dados)
+    def abrir_editar(self):
+        item_selecionado = self.tree.selection()
+        if not item_selecionado:
+            messagebox.showwarning("Aviso", "Selecione uma linha na tabela para editar.")
+            return
+            
+        # Coleta os valores do item selecionado na Treeview
+        valores = self.tree.item(item_selecionado[0], "values")
+        corretora = valores[0]
+        email = valores[1]
+
+        FormularioEmail(self, self.db_manager, self.carregar_dados, corretora_antiga=corretora, email_antigo=email)
+
+class FormularioEmail(ctk.CTkToplevel):
+    def __init__(self, master, db_manager, refresh_callback, corretora_antiga=None, email_antigo=None):
+        super().__init__(master)
+        
+        # Define se é modo Edição ou Inserção
+        self.is_edicao = (corretora_antiga is not None and email_antigo is not None)
+        titulo = "Editar Email" if self.is_edicao else "Inserir Novo Email"
+        
+        self.title(titulo)
+        self.geometry("400x250")
+        self.transient(master) # Mantém a janela sempre à frente do gerenciador
+        self.grab_set() # Foca os eventos do mouse e teclado apenas nesta janela
+
+        self.db_manager = db_manager
+        self.refresh_callback = refresh_callback
+        
+        self.corretora_antiga = corretora_antiga
+        self.email_antigo = email_antigo
+
+        # Layout: Entradas
+        self.lbl_corretora = ctk.CTkLabel(self, text="Corretora:", font=("Arial", 14, "bold"))
+        self.lbl_corretora.pack(pady=(20, 0), padx=20, anchor="w")
+        self.entry_corretora = ctk.CTkEntry(self, width=360)
+        self.entry_corretora.pack(pady=(0, 10), padx=20)
+
+        self.lbl_email = ctk.CTkLabel(self, text="Email:", font=("Arial", 14, "bold"))
+        self.lbl_email.pack(pady=(10, 0), padx=20, anchor="w")
+        self.entry_email = ctk.CTkEntry(self, width=360)
+        self.entry_email.pack(pady=(0, 20), padx=20)
+
+        # Frame para os botões
+        self.frame_botoes = ctk.CTkFrame(self, fg_color="transparent")
+        self.frame_botoes.pack(fill="x", padx=20)
+
+        if self.is_edicao:
+            # Preenche os campos
+            self.entry_corretora.insert(0, self.corretora_antiga)
+            self.entry_email.insert(0, self.email_antigo)
+
+            # Botões Editar e Excluir
+            self.btn_salvar = ctk.CTkButton(self.frame_botoes, text="Editar", command=self.editar_registro, fg_color="#2FA572", hover_color="#106A43")
+            self.btn_salvar.pack(side="left", expand=True, padx=5)
+
+            self.btn_excluir = ctk.CTkButton(self.frame_botoes, text="Excluir", command=self.excluir_registro, fg_color="#C23B22", hover_color="#8F2412")
+            self.btn_excluir.pack(side="right", expand=True, padx=5)
+        else:
+            # Botão Inserir
+            self.btn_inserir = ctk.CTkButton(self.frame_botoes, text="Inserir", command=self.inserir_registro)
+            self.btn_inserir.pack(expand=True, fill="x", padx=5)
+
+    def inserir_registro(self):
+        corretora = self.entry_corretora.get().strip()
+        email = self.entry_email.get().strip()
+
+        if not corretora or not email:
+            messagebox.showwarning("Aviso", "Preencha todos os campos!")
+            return
+
+        try:
+            conn = self.db_manager.conn
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO liq.EMAILS_CORRETORAS (corretora, email) 
+                VALUES (?, ?)
+            """, (corretora, email))
+            conn.commit()
+            self.refresh_callback()
+            self.destroy()
+        # except sqlite3.IntegrityError: # NO PROJETO REAL MUDE PARA: except pyodbc.IntegrityError:
+        #     messagebox.showerror("Erro", "Essa combinação de corretora e email já existe no banco de dados!")
+        except Exception as e:
+            messagebox.showerror("Erro BD", f"Ocorreu um erro ao inserir: {str(e)}")
+
+    def editar_registro(self):
+        corretora_nova = self.entry_corretora.get().strip()
+        email_novo = self.entry_email.get().strip()
+
+        if not corretora_nova or not email_novo:
+            messagebox.showwarning("Aviso", "Preencha todos os campos!")
+            return
+
+        try:
+            conn = self.db_manager.conn
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE liq.EMAILS_CORRETORAS 
+                SET corretora = ?, email = ? 
+                WHERE corretora = ? AND email = ?
+            """, (corretora_nova, email_novo, self.corretora_antiga, self.email_antigo))
+            conn.commit()
+            self.refresh_callback()
+            self.destroy()
+        # except sqlite3.IntegrityError: # NO PROJETO REAL MUDE PARA: except pyodbc.IntegrityError:
+        #      messagebox.showerror("Erro", "Essa combinação já existe em outra tupla do banco de dados!")
+        except Exception as e:
+            messagebox.showerror("Erro BD", f"Ocorreu um erro ao atualizar: {str(e)}")
+
+    def excluir_registro(self):
+        resposta = messagebox.askyesno("Confirmar", "Tem certeza que deseja excluir esta associação?")
+        if resposta:
+            try:
+                conn = self.db_manager.conn
+                cursor = conn.cursor()
+                cursor.execute("""
+                    DELETE FROM liq.EMAILS_CORRETORAS 
+                    WHERE corretora = ? AND email = ?
+                """, (self.corretora_antiga, self.email_antigo))
+                conn.commit()
+                self.refresh_callback()
+                self.destroy()
+            except Exception as e:
+                messagebox.showerror("Erro BD", f"Ocorreu um erro ao excluir: {str(e)}")
+
+
+
