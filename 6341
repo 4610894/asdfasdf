@@ -496,4 +496,90 @@ class FormularioEmail(ctk.CTkToplevel):
                 messagebox.showerror("Erro BD", f"Ocorreu um erro ao excluir: {str(e)}")
 
 
+=======================================================================
 
+
+
+
+def tem_anexo_excel(item):
+    try:
+        anexos = item.Attachments
+        if anexos.Count == 0: return False
+
+        for i in range(1, anexos.Count + 1):
+            nome = anexos.Item(i).FileName.lower()
+            if nome.endswith((".xlsx", ".xls", ".xlsm", ".csv")): return True
+
+    except Exception:
+        pass
+
+    return False
+
+def buscar_email(pasta, assunto1, assunto2):
+    email1 = None
+    email2 = None
+
+    try:
+        filtro = (f'@SQL=("urn:schemas:httpmail:subject" = \'{assunto1}\' '
+                  f'OR "urn:schemas:httpmail:subject" = \'{assunto2}\')')
+
+        itens = pasta.Items.Restrict(filtro)
+        itens.Sort("[ReceivedTime]", True)
+
+        for item in itens:
+            if item.Class != 43: continue
+            if not tem_anexo_excel(item): continue
+
+            assunto_email = item.Subject
+            if assunto_email == assunto1 and email1 is None: email1 = item
+            elif assunto_email == assunto2 and email2 is None: email2 = item
+
+            if email1 and email2: return email1, email2
+
+    except Exception as e:
+        print(f"Erro na pasta {pasta.Name}: {e}")
+
+    try:
+        for subpasta in pasta.Folders:
+            sub_email1, sub_email2 = buscar_email(subpasta, assunto1, assunto2)
+    
+            if sub_email1 and not email1: email1 = sub_email1
+            if sub_email2 and not email2: email2 = sub_email2
+            if email1 and email2: return email1, email2
+
+    except Exception as e:
+        print(f"Erro subpastas {pasta.Name}: {e}")
+
+    return email1, email2
+
+assunto1 = "X"
+assunto2 = "Y"
+outlook = win32.Dispatch("Outlook.Application").GetNamespace("MAPI")
+email1 = None
+email2 = None
+
+
+for pasta in outlook.Folders:
+    email1, email2 = buscar_email(pasta, assunto1, assunto2)
+    if email1 and email2: break
+
+if not email1:
+    self.logger.log("Não foi possível encontrar um e-mail da 2028 com anexo.")
+
+if email2:
+    self.logger.log("Não foi possível encontrar um e-mail da 4440 com anexo.")
+
+temp_paths = []
+dfs = []
+
+for idx, email in enumerate([email1, email2]):
+    if email is not None:
+        anexo = email.Attachments(1)
+        temp_path = os.path.join(os.environ['TEMP'], anexo.FileName)
+        anexo.SaveAsFile(temp_path)
+        temp_paths.append(temp_path)
+
+        df_temp = pd.read_excel(temp_path)
+        dfs.append(df_temp)
+        
+df_concat = pd.concat(dfs, ignore_index=True)
