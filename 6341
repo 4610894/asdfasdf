@@ -1,585 +1,2959 @@
-from PIL import Image
-import config
-import tkinter as tk
-import customtkinter as ctk
-from logger import Logger
-from tkinter import filedialog
-import pandas as pd
-from datetime import datetime
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PySide6.QtCore import Qt
 
-meses = {
-    1: "Janeiro",
-    2: "Fevereiro",
-    3: "Março",
-    4: "Abril",
-    5: "Maio",
-    6: "Junho",
-    7: "Julho",
-    8: "Agosto",
-    9: "Setembro",
-    10: "Outubro",
-    11: "Novembro",
-    12: "Dezembro"
+class WelcomeView(QWidget):
+    def __init__(self, parent=None, db_manager=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        label = QLabel("Bem-vindo ao Sistema")
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setStyleSheet("font-size: 24px; color: #555;")
+        layout.addWidget(label)
+
+
+
+
+
+
+
+import sys
+import locale
+from PySide6.QtWidgets import QApplication
+from app import MainApplication
+
+if __name__ == '__main__':
+    try:
+        locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
+    except:
+        print('locale pt_BR.UTF-8 não encontrado, usando o padrão do sistema')
+    
+    # Cria a instância da aplicação Qt
+    qt_app = QApplication(sys.argv)
+    
+    app = MainApplication()
+    app.show()
+    
+    # Executa o loop de eventos
+    sys.exit(qt_app.exec())
+
+
+
+
+
+
+
+
+
+
+import sys
+from PySide6.QtCore import QObject, Signal
+from PySide6.QtWidgets import QTextEdit
+
+class Logger(QObject):
+    # Define um sinal que carrega uma string
+    log_signal = Signal(str)
+
+    def __init__(self, log_widget: QTextEdit = None):
+        super().__init__()
+        self.log_widget = log_widget
+        # Conecta o sinal interno à função de escrever no widget
+        self.log_signal.connect(self._append_text)
+
+    def register_log_widget(self, log_widget: QTextEdit):
+        self.log_widget = log_widget
+        # Reconecta caso o widget mude
+        try:
+            self.log_signal.disconnect()
+        except TypeError:
+            pass # Se não havia conexão anterior
+        self.log_signal.connect(self._append_text)
+        self.log("Logger inicializado (PyQt).")
+
+    def _append_text(self, msg: str):
+        """Método executado na thread da GUI automaticamente via sinal."""
+        if self.log_widget:
+            self.log_widget.append(msg)
+            # Rola para o final
+            scrollbar = self.log_widget.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
+
+    def log(self, message: str):
+        """Pode ser chamado de qualquer thread com segurança."""
+        print(message) # Mantém print no console
+        # Emite o sinal. O Qt garante que _append_text rode na thread principal.
+        self.log_signal.emit(message)
+
+    def start_pumping(self):
+        # Em Qt, não precisamos de 'pumping' manual, os sinais lidam com isso.
+        # Mantive o método apenas para compatibilidade de interface se necessário.
+        pass
+
+
+
+
+
+
+
+
+
+
+
+
+import pyodbc
+from PySide6.QtWidgets import QMessageBox
+import config
+
+class DatabaseManager:
+    def __init__(self):
+        self.conn = None
+        self.cursor = None
+        # A conexão é iniciada, mas erros são tratados visualmente na UI
+        # O ideal seria não bloquear a UI na inicialização, mas mantive a lógica original.
+        self.connect()
+
+    def connect(self):
+        try:
+            connection_string = (
+                'DRIVER={ODBC Driver 17 for SQL Server};'
+                f'SERVER={config.SERVER};'
+                f'DATABASE={config.DATABASE};'
+                f'UID={config.USERNAME};'
+                f'PWD={config.PASSWORD}'
+            )
+            # Nota: pyodbc pode travar a GUI se o servidor demorar. 
+            # Em produção, mover isso para uma QThread é recomendado.
+            self.conn = pyodbc.connect(connection_string, timeout=5)
+            self.cursor = self.conn.cursor()
+            print('Conexão com o banco de dados estabelecida.')
+        except pyodbc.Error as e:
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Critical)
+            msg.setWindowTitle("Erro de Conexão")
+            msg.setText("Não foi possível conectar ao banco de dados.")
+            msg.setDetailedText(str(e))
+            msg.exec()
+            self.conn = None
+            self.cursor = None
+    
+    def close(self):
+        if self.conn:
+            self.conn.close()
+            print('Conexão com o banco de dados fechada.')
+    
+    def is_connected(self):
+        return self.conn is not None
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+from datetime import date, timedelta
+import locale
+import holidays
+
+CAMINHO_ESC = None
+CAMINHO_BTC = None
+CAMINHO_RV = None
+CAMINHO_BMF = None
+
+feriados_br = holidays.Brazil(years=[2026, 2027, 2028, 2029, 2030], state='SP')
+feriados = [pd.Timestamp(d) for d in feriados_br.keys()]
+custom_bday = pd.offsets.CustomBusinessDay(holidays=feriados)
+
+HOJE = date.today() - timedelta(days=0)
+DATA = HOJE + custom_bday
+DIA = DATA.day
+MES = DATA.month
+MES_NOME = DATA.strftime('%B').upper()
+MES_ANT = DATA.replace(day=1) - timedelta(days=1)
+MES_ANT_NOME = MES_ANT.strftime('%B').upper()
+ANO = DATA.year
+
+SERVER = None
+DATABASE = None
+TABLE = None
+USERNAME = None
+PASSWORD = None
+
+CONTAS_IMPESSOAIS = None
+
+NOME_JANELA = 'Liquiadação Inteligente'
+
+AZUL = '#312783'
+AZUL_HOVER = '#0B215C'
+BRANCO = '#FFFFFF'
+CINZA_CLARO = '#F2F4F6'
+
+
+
+
+
+
+
+
+
+
+
+
+
+import config
+from PySide6.QtWidgets import (
+    QHBoxLayout, QLabel, 
+    QFrame, QPushButton
+)
+from PySide6.QtGui import QPixmap, QFont
+from PySide6.QtCore import Qt, QThread, Signal
+
+
+def create_button(text, width=140, height=40) -> QPushButton:
+    button = QPushButton(text)
+
+    button.setFixedSize(width, height)
+    button.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    button.setStyleSheet(f"""
+        QPushButton {{
+            background-color: {config.AZUL};
+            color: white;
+            border-radius: 6px;
+            padding: 8px;
+            border: none;
+            font-weight: normal;
+            text-align: center;
+        }}
+
+        QPushButton:hover {{
+            background-color: {config.AZUL_HOVER};
+        }}
+    """)
+
+    return button
+
+def create_header(title):
+    # ================= CABEÇALHO =================
+    header_layout = QHBoxLayout()
+    header_layout.setContentsMargins(20, 20, 20, 10)
+
+    # Logo
+    logo_label = QLabel()
+
+    pixmap = QPixmap("intern/itau.png").scaled(
+        80,
+        80,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation
+    )
+
+    logo_label.setPixmap(pixmap)
+
+    header_layout.addWidget(logo_label)
+
+    # Título
+    title_label = QLabel(title)
+    title_label.setFont(QFont("Arial", 24, QFont.Weight.Bold))
+
+    header_layout.addWidget(title_label)
+
+    # Empurra conteúdo para esquerda
+    header_layout.addStretch()
+
+    # ================= LINHA DIVISÓRIA =================
+    linha_divisoria = QFrame()
+
+    linha_divisoria.setFrameShape(QFrame.Shape.HLine)
+    linha_divisoria.setStyleSheet("background-color: black;")
+    linha_divisoria.setFixedHeight(2)
+
+    linha_layout = QHBoxLayout()
+    linha_layout.setContentsMargins(20, 10, 20, 10)
+
+    linha_layout.addWidget(linha_divisoria)
+
+    return header_layout, linha_layout
+
+class GenericWorker(QThread):
+    log_signal = Signal(str)
+    finished_signal = Signal()
+
+    def __init__(self, funcao_alvo, *args, **kwargs):
+        """
+        Recebe qual função deverá ser executada e os parâmetros dela.
+        """
+        super().__init__()
+        self.funcao_alvo = funcao_alvo
+        self.args = args
+        self.kwargs = kwargs
+
+    def run(self):
+        # Executa a função passando o próprio worker como primeiro argumento,
+        # além dos outros argumentos que foram passados na criação.
+        self.funcao_alvo(self, *self.args, **self.kwargs)
+        
+        # Emite o sinal de que o processo acabou
+        self.finished_signal.emit()
+
+MESES = {
+    1: 'Janeiro',
+    2: 'Fevereiro',
+    3: 'Março',
+    4: 'Abril',
+    5: 'Maio',
+    6: 'Junho',
+    7: 'Julho',
+    8: 'Agosto',
+    9: 'Setembro',
+    10: 'Outubro', 
+    11: 'Novembro', 
+    12: 'Dezembro',
 }
 
-class STRview(ctk.CTkFrame):
-    def __init__(self, parent):
-        #def __init__(self, parent, db_manager):
-        super().__init__(parent, fg_color="transparent")
-
-        #self.db_manager = db_manager
-        
-        self.create_widgets()
-
-    def create_widgets(self):
-        # CABEÇALHO
-        header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        header_frame.pack(fill="x", pady=(20, 10))
-
-        # Logo
-        logo_img = ctk.CTkImage(light_image=Image.open("intern/logo_itau.png"), size=(80, 80))
-        logo_label = ctk.CTkLabel(header_frame, image=logo_img, text="")
-        logo_label.pack(side="left", padx=20)
-
-        # Título
-        title_label = ctk.CTkLabel(header_frame, text="STR0004", font=("Arial", 24, "bold"))
-        title_label.pack(side="left", padx=10)
-
-        # Linha divisória
-        linha_divisoria = ctk.CTkFrame(self, height=2, fg_color="black")
-        linha_divisoria.pack(fill="x", padx=20, pady=10)
-
-        # CONTEÚDO PRINCIPAL
-        main_frame = ctk.CTkFrame(self, fg_color="transparent")
-        main_frame.pack(fill="both", expand=True, padx=20)
-
-        # Botão centralizado
-        button_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        button_frame.pack(pady=(20, 20))
-
-        self.emails_button = ctk.CTkButton(button_frame, text="Importar Câmbio", command=self._run, width=140, fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
-        self.emails_button.grid(row=0, column=0, sticky="w", padx=10)
-
-        # Log Frame
-        log_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        log_frame.pack(fill="both", expand=True)
-
-        ctk.CTkLabel(log_frame, text="Log de processos:", font=("Arial", 12)).pack(anchor="w", pady=(0, 5))
-        log_text = ctk.CTkTextbox(log_frame, font=("Arial", 12))
-        log_text.pack(fill="both", expand=True)
-
-        # Logger
-        self.logger = Logger()
-        self.logger.register_log_widget(log_text, after_owner=self, interval_ms=100)
-        self.logger.start_pumping()
-    
-    def _run(self):
-        arquivo = self._selecionar_arquivo()
-        if arquivo:
-            self._tratar_arquivo(arquivo)
-        else:
-            self.logger.log("Nenhum arquivo foi selecionado.")
-    
-    def _selecionar_arquivo(self):
-        arquivo = filedialog.askopenfilename(
-            initialdir=r"C:\YMF\CAMBIO",
-            title="Selecione um arquivo",
-            filetypes=[ ("Planilhas Excel", "*.xlsx *.xls")]
-        )
-        return arquivo
-    
-    def _tratar_arquivo(self, arquivo):
-        return
-        
-        #############################
-        #                           #
-        # COLA AQUI O CÓDIGO DA NAT #
-        #                           #
-        #############################
-        
-        resultado = f"C:/YMF/CAMBIO/Resultado {meses[datetime.now().month]} {datetime.now().year}.xlsx"
-        df.to_excel(resultado, index=False)
-        self.logger.log(f"Arquivo salvo em: {resultado}")
-
-# ===============================================================================================================================================================#
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+import tkinter as tk
+from tkinter import ttk
 import customtkinter as ctk
-import win32com.client
-
-def get_outlook_folders():
-    """
-    Conecta ao Outlook e retorna uma lista com o caminho de todas as pastas e subpastas.
-    """
-    try:
-        outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
-        folders_list = []
-
-        # Função recursiva para pegar subpastas dentro de pastas
-        def map_subfolders(folder, path=""):
-            for subfolder in folder.Folders:
-                # Monta o caminho da pasta (ex: Caixa de Entrada/Projetos)
-                current_path = f"{path}/{subfolder.Name}" if path else subfolder.Name
-                folders_list.append(current_path)
-                # Chama a recursão para caso a subpasta tenha mais subpastas
-                map_subfolders(subfolder, current_path)
-
-        # Iterar pelas contas (Stores) configuradas no Outlook
-        for store in outlook.Stores:
-            root_folder = store.GetRootFolder()
-            # Começa a mapear a partir da raiz da conta
-            map_subfolders(root_folder, root_folder.Name)
-            
-        return folders_list
-    except Exception as e:
-        print(f"Erro ao acessar o Outlook: {e}")
-        return []
-
-class EmailSearchApp(ctk.CTk):
-    def __init__(self):
-        super().__init__()
-
-        self.title("Buscador de Emails no Outlook")
-        self.geometry("450x250")
-        
-        # Centralizando os elementos na tela
-        self.grid_columnconfigure(0, weight=1)
-
-        # 1. Carregar as pastas do Outlook
-        self.label_info = ctk.CTkLabel(self, text="Carregando pastas do Outlook...", text_color="gray")
-        self.label_info.grid(row=0, column=0, pady=(20, 5))
-        self.update() # Força a atualização da tela antes de travar com a busca do Outlook
-        
-        pastas_outlook = get_outlook_folders()
-        self.opcoes_combobox = ["Todas Pastas"] + pastas_outlook
-        
-        self.label_info.configure(text="Selecione a pasta para realizar a busca:")
-
-        # 2. Criar a variável e a ComboBox
-        self.pasta_selecionada = ctk.StringVar(value="Todas Pastas")
-        
-        self.combobox = ctk.CTkComboBox(
-            self, 
-            values=self.opcoes_combobox, 
-            variable=self.pasta_selecionada,
-            width=300,
-            state="readonly" # Impede o usuário de digitar um nome de pasta que não existe
-        )
-        self.combobox.grid(row=1, column=0, pady=(10, 20))
-
-        # 3. Botão de Busca
-        self.btn_buscar = ctk.CTkButton(
-            self, 
-            text="Iniciar Varredura", 
-            command=self.iniciar_busca,
-            fg_color="#1f538d",
-            hover_color="#14375e"
-        )
-        self.btn_buscar.grid(row=2, column=0, pady=10)
-
-    def iniciar_busca(self):
-        # Esta é a função chamada quando o botão é clicado
-        pasta_alvo = self.pasta_selecionada.get()
-        
-        if pasta_alvo == "Todas Pastas":
-            print("Iniciando varredura em: TODAS AS PASTAS (Atenção: Processo demorado)")
-            # Cole sua lógica de varredura completa aqui
-        else:
-            print(f"Iniciando varredura apenas na pasta: {pasta_alvo}")
-            # Cole sua lógica de varredura específica da pasta aqui
-            
-            # DICA: Para acessar a pasta específica no win32com a partir do caminho retornado:
-            # path_parts = pasta_alvo.split('/')
-            # folder = outlook.Stores[...].GetRootFolder()
-            # for part in path_parts[1:]:
-            #     folder = folder.Folders(part)
-
-if __name__ == "__main__":
-    # Configuração de tema do CustomTkinter (opcional)
-    ctk.set_appearance_mode("System")  # "System", "Dark", "Light"
-    ctk.set_default_color_theme("blue")
-    
-    app = EmailSearchApp()
-    app.mainloop()
-
-
-
-# JEITO LENTO
-for email in folder.Items:
-    if email.Subject == "Assunto Procurado":
-        # faz algo
-
-# Aplica um filtro direto na fonte (muito mais rápido)
-filtro = "@SQL=urn:schemas:httpmail:subject LIKE '%Assunto Procurado%'"
-emails_filtrados = folder.Items.Restrict(filtro)
-
-for email in emails_filtrados:
-    print("Achei o email:", email.Subject)
-
-
-===============================================================================
-
-
-
+import sqlite3
+from datetime import date, datetime
+import config
 
 from PIL import Image
+
+class ChecklistView(ctk.CTkFrame):
+    
+    def __init__(self, parent, db_manager, **kwargs):
+        super().__init__(parent, fg_color="transparent", **kwargs)
+        self.db_manager = db_manager
+
+        # Variáveis de controle
+        self.data_var = ctk.StringVar(value=date.today().strftime('%d/%m/%Y'))
+        self.data_var.trace_add("write", self._formatar_data)
+        
+        self.tarefa_var = ctk.StringVar()
+        self.status_var = ctk.StringVar(value="Todos")
+        self.esteira_var = ctk.StringVar(value="Todas")
+        self.nome_tarefa_var = ctk.StringVar()
+        
+        self._cell_editor_info = None
+
+        self.guias_abas = None
+        self.abas_frames = {}
+        self.treeviews = {}
+
+        self._create_widgets()
+        self.inserir_dados()
+        self.revisar_status()
+        self._filtrar()
+        
+    def _create_widgets(self):
+        """Cria a interface principal."""
+        
+        # --- CABEÇALHO ---
+        header_frame = ctk.CTkFrame(self, fg_color="transparent")
+        header_frame.pack(fill="x", pady=(0, 20))
+
+        # Logo
+        logo_img = ctk.CTkImage(light_image=Image.open("interc/logo_itau.png"), size=(80, 80))
+        logo_label = ctk.CTkLabel(header_frame, image=logo_img, text="")
+        logo_label.pack(side="left", padx=10)
+
+        # Título
+        title_label = ctk.CTkLabel(header_frame, text="Checklist de Atividades Diárias", font=("Arial", 24, "bold"))
+        title_label.pack(side="left", padx=20)
+        
+        # Linha
+        line = ctk.CTkFrame(self, height=2, fg_color="black")
+        line.pack(fill="x", pady=(0, 20))
+        
+        # --- FILTROS ---
+        filtro_frame = ctk.CTkFrame(self, fg_color="transparent")
+        filtro_frame.pack(fill="x", pady=(0, 10))
+
+        # Data
+        data = str(config.HOJE).split("-")
+        data = f"{data[2]}/{data[1]}/{data[0]}"
+
+        self.data_var.set(data)
+
+        ctk.CTkLabel(filtro_frame, text="Data:").grid(row=0, column=0, padx=5, pady=5)
+        data_entry = ctk.CTkEntry(filtro_frame, textvariable=self.data_var, width=120)
+        data_entry.grid(row=0, column=1, padx=5, pady=5)
+
+        status_opcoes = ["Todos", "Pendente", "Em andamento", "Concluído", "Em atraso", "Não se aplica"]
+        ctk.CTkLabel(filtro_frame, text="Status:").grid(row=0, column=2, padx=5, pady=5)
+        status_menu = ctk.CTkOptionMenu(filtro_frame, values=status_opcoes, variable=self.status_var, fg_color=config.AZUL, button_hover_color=config.AZUL_HOVER, button_color=config.AZUL_HOVER)
+        status_menu.grid(row=0, column=3, padx=5, pady=5)
+
+        ctk.CTkLabel(filtro_frame, text="Nome Tarefa:").grid(row=0, column=4, padx=5, pady=5)
+        tarefa_entry = ctk.CTkEntry(filtro_frame, textvariable=self.nome_tarefa_var)
+        tarefa_entry.grid(row=0, column=5, padx=5, pady=5)
+
+        filtrar_button = ctk.CTkButton(filtro_frame, text="Filtrar", command=self._filtrar, fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
+        filtrar_button.grid(row=0, column=6, padx=10, pady=5)
+        
+        cadastrar_button = ctk.CTkButton(filtro_frame, text="Gerenciar Evento Especial", command=self.gerenciar_evento_especial, fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
+        cadastrar_button.grid(row=0, column=7, padx=10, pady=5)
+
+        # --- TABELAS EM ABAS ---
+        abas_frame = ctk.CTkFrame(self)
+        abas_frame.pack(fill="both", expand=True, pady=10)
+        
+        self.guias_abas = ctk.CTkSegmentedButton(abas_frame, variable=self.esteira_var, command=self._filtrar,
+                                                 selected_color=config.AZUL_HOVER,
+                                                 selected_hover_color=config.AZUL_HOVER,
+                                                 unselected_color=config.AZUL,
+                                                 unselected_hover_color=config.AZUL_HOVER)
+        self.guias_abas.pack(fill="x", padx=10, pady=(10, 0))
+
+        self.treeviews = {} # Dicionário para armazenar as treeviews por aba
+
+        even_bg = "#ffffff"  # fundo padrão
+        odd_bg = "#f0f0f0"   # cinza claro
+
+        esteiras_todas = ["Todas", "Pendente", "Em andamento", "Concluído", "Em atraso", "Não se aplica"]
+        for nome_aba in esteiras_todas:
+            aba_frame = ctk.CTkFrame(abas_frame)
+            self.abas_frames[nome_aba] = aba_frame
+            
+            columns = (
+                "ID Tarefa", "Tarefa", "Data Evento", "Status",
+                "Responsável", "Observação", "Data Atualização", "Esteira"
+            )
+
+            tree = ttk.Treeview(
+                aba_frame,
+                columns=columns,
+                show="headings"
+            )
+            
+            if nome_aba == "Todas":
+                # Larguras das colunas (Ajuste conforme sua necessidade)
+                col_widths = {
+                    "ID Tarefa": 0,          # oculto
+                    "Tarefa": 200,
+                    "Data Evento": 120,
+                    "Status": 100,
+                    "Responsável": 100,
+                    "Observação": 250,
+                    "Data Atualização": 150,
+                    "Esteira": 150
+                }
+            else:
+                col_widths = {
+                    "ID Tarefa": 0,          # oculto
+                    "Tarefa": 200,
+                    "Data Evento": 120,
+                    "Status": 100,
+                    "Responsável": 100,
+                    "Observação": 250,
+                    "Data Atualização": 150,
+                    "Esteira": 0           # oculto
+                }
+
+            # Alinhamentos sugeridos
+            col_anchors = {
+                "ID Tarefa": "center",
+                "Tarefa": "w",
+                "Data Evento": "center",
+                "Status": "center",
+                "Responsável": "center",
+                "Observação": "w",
+                "Data Atualização": "center",
+                "Esteira": "center"
+            }
+
+            for col in columns:
+                tree.heading(col, text=col)
+                w = col_widths.get(col, 100)
+                anchor = col_anchors.get(col, "center")
+                
+                stretch_col = True if col in ("Tarefa", "Observação") else False
+                tree.column(col, width=w, stretch=stretch_col, anchor=anchor)
+
+            tree.pack(fill="both", expand=True)
+
+            # Tags de zebra PARA ESTA ÁRVORE
+            tree.tag_configure("even", background=even_bg)
+            tree.tag_configure("odd", background=odd_bg)
+
+            # OBS: se no mac o código estiver como <ButtonRelease-1&gt; ,
+            # troque por <ButtonRelease-1> no Python real:
+            tree.bind("<Double-1>", self._editor_celula)
+
+            self.treeviews[nome_aba] = tree
+
+        # --- BOTÕES DE AÇÃO ---
+        acoes_frame = ctk.CTkFrame(self, fg_color="transparent")
+        acoes_frame.pack(fill="x", pady=10)
+
+        salvar_button = ctk.CTkButton(acoes_frame, text="Atualizar painel", command=self._atualizar_painel, fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
+        salvar_button.pack(side="left", padx=10)
+
+
+    def inserir_dados(self):
+        """
+        Insere os dados pela primeira vez no dia
+        """
+        cursor = self.db_manager.conn.cursor()
+
+        # Verifica se já existem registros para hoje
+        query = """
+            SELECT data
+            FROM liq.CHECKLIST_EXECUCAO
+            WHERE data = ?
+        """
+        cursor.execute(query, (config.HOJE,))
+
+        dados = cursor.fetchall()
+        
+        if not dados:
+            # Busca todos os IDs de tarefas que não são esporádicas
+            query = """
+                SELECT id 
+                FROM liq.CHECKLIST_TAREFAS 
+                WHERE esteira NOT LIKE 'ES - %'
+            """
+            cursor.execute(query)
+            tarefas = cursor.fetchall()
+
+            # Insere cada tarefa na execução de hoje
+            for tarefa in tarefas:
+                id_tarefa = tarefa[0]
+                
+                query = """
+                    INSERT INTO liq.CHECKLIST_EXECUCAO (id_tarefa, data)
+                    VALUES (?, ?)
+                """
+                cursor.execute(query, (id_tarefa, config.HOJE))
+                
+            self.db_manager.conn.commit()
+
+
+    def _filtrar(self, *args):
+        """Aplica os filtros e insere os dados na treeview."""
+        bruto = self.data_var.get()
+        if bruto:
+            # Remove qualquer caracter que não seja número
+            numeros = ''.join(filter(str.isdigit, bruto))
+            if len(numeros) == 8:
+                dd = numeros[:2]
+                mm = numeros[2:4]
+                aaaa = numeros[4:]
+                
+                # Só considera válido se estiver completo
+                data_iso = f"{aaaa}-{mm}-{dd}" if len(aaaa) == 4 else ""
+            else:
+                data_iso = "" # ou o backend exigir string
+        else:
+            data_iso = ""
+
+        nome_aba = self.esteira_var.get()
+        esteira_param = None if nome_aba == "Todas" else nome_aba
+
+        dados = self._consultar_checklist(
+            data=data_iso,
+            status=self.status_var.get(),
+            tarefa=self.nome_tarefa_var.get(),
+            esteira=esteira_param
+        )
+        
+        # Limpa as listas
+        for tree in self.treeviews.values():
+            tree.delete(*tree.get_children())
+
+        # Oculta todos os frames de abas
+        for frame in self.abas_frames.values():
+            frame.pack_forget()
+            
+        # Mostra apenas o frame da aba selecionada
+        if nome_aba in self.abas_frames:
+             self.abas_frames[nome_aba].pack(fill="both", expand=True)
+
+        tree = self.treeviews.get(nome_aba)
+        
+        if tree:
+            for i, linha in enumerate(dados):
+                tag = "even" if i % 2 == 0 else "odd"
+                
+                # Se for aba específica (não "Todas"), remova o último elemento (Esteira)
+                if nome_aba != "Todas":
+                    # Assumindo que a ordem da query é:
+                    # id, tarefa, data, status, resp, obs, data_atual, esteira
+                    # Exclui o item[7] (Esteira)
+                    valores = (
+                        linha.get('id_tarefa', ""),
+                        linha.get('tarefa', ""),
+                        linha.get('data_evento', ""),
+                        linha.get('status', ""),
+                        linha.get('responsavel', ""),
+                        linha.get('observacoes', ""),
+                        linha.get('data_atualizacao', "")
+                    )
+                else:
+                    valores = (
+                        linha.get('id_tarefa', ""),
+                        linha.get('tarefa', ""),
+                        linha.get('data_evento', ""),
+                        linha.get('status', ""),
+                        linha.get('responsavel', ""),
+                        linha.get('observacoes', ""),
+                        linha.get('data_atualizacao', ""),
+                        linha.get('esteira', "")
+                    )
+                
+                tree.insert("", "end", values=valores, tags=(tag,))
+                
+        self._aplicar_listras(tree)
+
+
+    def _aplicar_listras(self, treeview: ttk.Treeview):
+        """Aplica as cores alternadas nas linhas da treeview"""
+        children = treeview.get_children()
+        for i, iid in enumerate(children):
+            tag = "even" if i % 2 == 0 else "odd"
+            treeview.item(iid, tags=(tag,))
+
+
+    def _consultar_checklist(self, data=None, status=None, tarefa=None, esteira=None):
+        cursor = self.db_manager.conn.cursor()
+
+        query = """
+            SELECT t.id AS id_tarefa, t.tarefa, t.esteira, t.data AS data_evento, e.status, 
+                   e.responsavel,
+                   e.observacoes, e.data_atualizacao
+            FROM liq.CHECKLIST_EXECUCAO e
+            JOIN liq.CHECKLIST_TAREFAS t ON e.id_tarefa = t.id
+            WHERE 1=1
+        """
+        params = []
+        
+        if data:
+            query += " AND e.data = ?"
+            params.append(data)
+
+        if status and status != "Todos":
+            query += " AND e.status = ?"
+            params.append(status)
+
+        if tarefa:
+            query += " AND t.tarefa LIKE ?"
+            params.append(f"%{tarefa}%")
+            
+        if esteira:
+            esteira_conditions = []
+            if esteira == "Pendente":
+                esteira_conditions.append("t.esteira LIKE 'ES - %'")
+            else:
+                esteira_conditions.append("t.esteira = ?")
+                params.append(esteira)
+            
+            if esteira_conditions:
+                 query += " AND (" + " OR ".join(esteira_conditions) + ")"
+                 
+        query += " ORDER BY t.horario_conclusao"
+                 
+        cursor.execute(query, params)
+        
+        col_names = [desc[0] for desc in cursor.description]
+        resultados = [dict(zip(col_names, row)) for row in cursor.fetchall()]
+        
+        return resultados
+
+
+    def _atualizar_painel(self):
+        self._filtrar()
+        
+    def _editor_celula(self, event):
+        """
+        Inicia a edição de uma célula com dois cliques.
+        """
+        # Garante apenas um editor por vez: fecha o anterior salvando (ou mude para salvar=False se preferir descartar)
+        if self._cell_editor_info:
+            self._fechar_editor_atual(salvar=True)
+            
+        aba_atual = self.esteira_var.get()
+        tree = self.treeviews.get(aba_atual)
+        
+        if not tree:
+            return
+
+        region = tree.identify("region", event.x, event.y)
+        if region != "cell":
+            return
+
+        col_id = tree.identify_column(event.x)
+        col_index = int(col_id.replace("#", "")) - 1
+        
+        # Colunas editáveis: Status (3), Responsável (4), Observação (5)
+        # Atenção aos índices, já que 'ID Tarefa' é 0
+        if col_index not in (3, 4, 5): 
+            return
+
+        row_id = tree.identify_row(event.y)
+        if not row_id:
+            return
+
+        bbox = tree.bbox(row_id, col_id)
+        if not bbox:
+            return
+            
+        x, y, width, height = bbox
+        valores = tree.item(row_id, "values")
+        valor_atual = valores[col_index]
+        
+        # Cria o editor (somente se puder ver)
+        if col_index == 3: # Status
+            opcoes = ["", "Pendente", "Em andamento", "Concluído", "Não se aplica"]
+            editor = ttk.Combobox(tree, values=opcoes, state="readonly")
+            editor.set(valor_atual)
+        else:
+            editor = ttk.Entry(tree)
+            editor.insert(0, valor_atual)
+
+        editor.place(x=x, y=y, width=width, height=height)
+        editor.focus_set()
+
+        if isinstance(editor, ttk.Entry):
+            editor.select_range(0, "end")
+
+        # Guarda referências do editor atual
+        self._cell_editor_info = {
+            "widget": editor,
+            "row_id": row_id,
+            "col_id": col_id,
+            "col_index": col_index
+        }
+
+        # Handlers
+        # Garante que só salva se este editor ainda é o ativo
+        def salvar_edicao(event=None):
+            if self._cell_editor_info and self._cell_editor_info["widget"] == editor:
+                self._fechar_editor_atual(salvar=True)
+                
+        def cancelar_edicao(event=None):
+            if self._cell_editor_info and self._cell_editor_info["widget"] == editor:
+                self._fechar_editor_atual(salvar=False)
+
+        # Binds
+        editor.bind("<Return>", salvar_edicao)
+        editor.bind("<Escape>", cancelar_edicao)
+        
+        # Para Entry, salva ao perder foco; para Combobox, commit ao selecionar/Enter
+        if isinstance(editor, ttk.Entry):
+            editor.bind("<FocusOut>", salvar_edicao)
+        elif isinstance(editor, ttk.Combobox):
+            editor.bind("<<ComboboxSelected>>", salvar_edicao)
+
+
+    def _atualizar_status_no_banco(self, id_tarefa, data_evento, novo_status):
+        try:
+            cursor = self.db_manager.conn.cursor()
+            
+            query = """
+                UPDATE liq.CHECKLIST_EXECUCAO
+                SET status = ?, data_atualizacao = SYSDATETIME()
+                WHERE id_tarefa = ? AND data = ?
+            """
+            cursor.execute(query, (novo_status, id_tarefa, data_evento))
+            self.db_manager.conn.commit()
+            
+        except Exception as e:
+            print(f"Erro ao atualizar status: {e}")
+            # Em um cenário real, você poderia exibir uma mensagem de erro na UI
+
+
+    def _atualizar_responsavel_no_banco(self, id_tarefa, data_evento, novo_valor):
+        try:
+            cursor = self.db_manager.conn.cursor()
+            
+            query = """
+                UPDATE liq.CHECKLIST_EXECUCAO
+                SET responsavel = ?, data_atualizacao = SYSDATETIME()
+                WHERE id_tarefa = ? AND data = ?
+            """
+            cursor.execute(query, (novo_valor, id_tarefa, data_evento))
+            self.db_manager.conn.commit()
+            
+        except Exception as e:
+             print(f"Erro ao atualizar responsavel: {e}")
+
+
+    def _atualizar_observacoes_no_banco(self, id_tarefa, data_evento, novo_valor):
+         try:
+            cursor = self.db_manager.conn.cursor()
+            
+            query = """
+                UPDATE liq.CHECKLIST_EXECUCAO
+                SET observacoes = ?, data_atualizacao = SYSDATETIME()
+                WHERE id_tarefa = ? AND data = ?
+            """
+            cursor.execute(query, (novo_valor, id_tarefa, data_evento))
+            self.db_manager.conn.commit()
+            
+         except Exception as e:
+              print(f"Erro ao atualizar observacoes: {e}")
+              
+    def _formatar_data(self, *args):
+        """
+        Formata a string conforme a quantidade de dígitos
+        digitados para o formato DD/MM/AAAA.
+        """
+        valor = self.data_var.get()
+        # Remove tudo que não for dígito
+        numeros = ''.join(filter(str.isdigit, valor))
+
+        novo = ""
+        # 0 a 2 dígitos: "DD" ou "D"
+        if len(numeros) <= 2:
+            novo = numeros
+        # 3 ou 4 dígitos: "DD/MM" ou "DD/M"
+        elif len(numeros) <= 4:
+            novo = f"{numeros[:2]}/{numeros[2:]}"
+        # 5 a 8 dígitos: "DD/MM/AAAA" (parcial se < 8)
+        else:
+            novo = f"{numeros[:2]}/{numeros[2:4]}/{numeros[4:8]}"
+
+        # Evita sobrescrever se não mudou (reduz flicker/reentrância)
+        if valor != novo:
+            self.data_var.set(novo)
+
+    def _buscar_eventos_especiais(self):
+        cursor = self.db_manager.conn.cursor()
+        query = """
+            SELECT DISTINCT(tarefa) 
+            FROM liq.CHECKLIST_TAREFAS 
+            WHERE esteira LIKE 'ES - %'
+        """
+        cursor.execute(query)
+        resultados = [row[0] for row in cursor.fetchall()]
+        return resultados
+        
+    def gerenciar_evento_especial(self):
+        eventos = self._buscar_eventos_especiais()
+        
+        popup = ctk.CTkToplevel(self)
+        popup.title("Novo Evento Especial")
+        popup.geometry("300x250")
+        popup.transient(self) # Fica acima da janela principal
+        popup.grab_set()      # Bloqueia interação com a janela principal
+        popup.attributes('-topmost', True)
+
+        ctk.CTkLabel(popup, text="Selecione a Tarefa:").pack(pady=(20, 5))
+        
+        tarefa_var = ctk.StringVar(value=eventos[0] if eventos else "")
+        tarefa_menu = ctk.CTkOptionMenu(popup, variable=tarefa_var, values=eventos, width=200, fg_color=config.AZUL, button_hover_color=config.AZUL_HOVER, button_color=config.AZUL_HOVER)
+        tarefa_menu.pack(pady=5)
+        
+        ctk.CTkLabel(popup, text="Selecione a Esteira:").pack(pady=(15, 5))
+        esteira_var = ctk.StringVar(value="Todas")
+        esteira_menu = ctk.CTkOptionMenu(popup, variable=esteira_var, values=config.ESTEIRAS, width=200, fg_color=config.AZUL, button_hover_color=config.AZUL_HOVER, button_color=config.AZUL_HOVER)
+        esteira_menu.pack(pady=5)
+        
+        botoes_frame = ctk.CTkFrame(popup, fg_color="transparent")
+        botoes_frame.pack(pady=(20, 10))
+
+        def adicionar_evento():
+             tarefa = tarefa_var.get()
+             esteira = esteira_var.get()
+             
+             if not tarefa or not esteira:
+                 from tkinter import messagebox
+                 messagebox.showwarning("Aviso", "Por favor, selecione a tarefa e a esteira.")
+                 return
+                 
+             cursor = self.db_manager.conn.cursor()
+             
+             # 1) Descobrir o ID da tarefa
+             query = """
+                 SELECT id
+                 FROM liq.CHECKLIST_TAREFAS
+                 WHERE tarefa = ?
+                 AND esteira LIKE 'ES - %'
+             """
+             cursor.execute(query, (tarefa,))
+             row = cursor.fetchone()
+             
+             if row is None:
+                 from tkinter import messagebox
+                 messagebox.showerror("Erro", "Tarefa especial não encontrada no banco.")
+                 return
+                 
+             id_tarefa = row[0]
+             
+             # 2) Verificar se já foi inserido para hoje
+             query = """
+                 SELECT 1
+                 FROM liq.CHECKLIST_EXECUCAO
+                 WHERE id_tarefa = ?
+                 AND data = ?
+             """
+             cursor.execute(query, (id_tarefa, config.HOJE))
+             
+             if cursor.fetchone():
+                 from tkinter import messagebox
+                 messagebox.showinfo("Informação", "Este evento já foi inserido para hoje.")
+                 return
+                 
+             # 3) Inserir na tabela de execução
+             try:
+                 query = """
+                     INSERT INTO liq.CHECKLIST_EXECUCAO (id_tarefa, data, status, esteira)
+                     VALUES (?, ?, 'Pendente', ?)
+                 """
+                 cursor.execute(query, (id_tarefa, config.HOJE, esteira))
+                 self.db_manager.conn.commit()
+                 
+                 from tkinter import messagebox
+                 messagebox.showinfo("Sucesso", "Evento especial adicionado com sucesso!")
+                 popup.destroy()
+                 self._atualizar_painel() # Atualiza a tabela
+                 
+             except Exception as e:
+                 from tkinter import messagebox
+                 messagebox.showerror("Erro", f"Erro ao adicionar evento: {e}")
+
+
+        def remover_evento():
+             tarefa = tarefa_var.get()
+             esteira = esteira_var.get()
+             
+             if not tarefa or not esteira:
+                 from tkinter import messagebox
+                 messagebox.showwarning("Aviso", "Por favor, selecione a tarefa e a esteira.")
+                 return
+                 
+             cursor = self.db_manager.conn.cursor()
+             
+             # 1) Descobrir o ID da tarefa
+             query = """
+                 SELECT id
+                 FROM liq.CHECKLIST_TAREFAS
+                 WHERE tarefa = ?
+                 AND esteira LIKE 'ES - %'
+             """
+             cursor.execute(query, (tarefa,))
+             row = cursor.fetchone()
+             
+             if row is None:
+                 from tkinter import messagebox
+                 messagebox.showerror("Erro", "Tarefa especial não encontrada no banco.")
+                 return
+                 
+             id_tarefa = row[0]
+             
+             # 2) Tentar remover
+             try:
+                 query = """
+                     DELETE FROM liq.CHECKLIST_EXECUCAO
+                     WHERE id_tarefa = ?
+                     AND data = ?
+                     AND esteira = ?
+                 """
+                 cursor.execute(query, (id_tarefa, config.HOJE, esteira))
+                 
+                 if cursor.rowcount > 0:
+                      self.db_manager.conn.commit()
+                      from tkinter import messagebox
+                      messagebox.showinfo("Sucesso", "Evento especial removido com sucesso!")
+                      popup.destroy()
+                      self._atualizar_painel()
+                 else:
+                      from tkinter import messagebox
+                      messagebox.showinfo("Informação", "Nenhum evento correspondente encontrado para hoje.")
+             
+             except Exception as e:
+                 from tkinter import messagebox
+                 messagebox.showerror("Erro", f"Erro ao remover evento: {e}")
+                 
+        adicionar_btn = ctk.CTkButton(botoes_frame, text="Adicionar", command=adicionar_evento, fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
+        adicionar_btn.pack(side="left", padx=5)
+
+        remover_btn = ctk.CTkButton(botoes_frame, text="Remover", command=remover_evento, fg_color="#D9534F", hover_color="#C9302C")
+        remover_btn.pack(side="left", padx=5)
+
+
+    def revisar_status(self):
+        cursor = self.db_manager.conn.cursor()
+        query = """
+            UPDATE liq.CHECKLIST_EXECUCAO
+            SET status = 'Em atraso'
+            FROM liq.CHECKLIST_EXECUCAO e
+            JOIN liq.CHECKLIST_TAREFAS t ON e.id_tarefa = t.id
+            WHERE e.status = 'Pendente' 
+            AND e.data = CONVERT(date, GETDATE())
+            AND GETDATE() > CAST(e.data AS DATETIME) + CAST(t.horario_conclusao AS DATETIME)
+        """
+        cursor.execute(query)
+        self.db_manager.conn.commit()
+        
+
+    def _formatar_data_atualizacao(self, valor):
+        if not valor:
+             return ""
+        
+        if isinstance(valor, datetime):
+            return valor.strftime('%d-%m-%Y %H:%M')
+            
+        # Se for string tenta converter
+        try:
+            # Assumindo que vem do SQL Server no formato '2025-05-19 10:45:14.287000'
+            dt = datetime.strptime(valor[:19], '%Y-%m-%d %H:%M:%S')
+            return dt.strftime('%d-%m-%Y %H:%M')
+        except ValueError:
+            pass # Se falhar, tenta outros formatos ou retorna original
+            
+        return valor
+        
+        
+    def _fechar_editor_atual(self, salvar=True):
+        """
+        Fecha o editor atual (se houver). Se salvar=True, grava as alterações na Treeview e no banco.
+        """
+        if not self._cell_editor_info:
+            return
+
+        info = self._cell_editor_info
+        editor = info["widget"]
+        row_id = info["row_id"]
+        col_id = info["col_id"]
+        col_index = info["col_index"]
+
+        # Zera antes para prevenir reentrância em binds que disparam novamente
+        self._cell_editor_info = None
+
+        try:
+            widget = info["widget"]
+            
+            if not widget.winfo_exists():
+                return
+                
+            tree_atual = self.treeviews.get(self.esteira_var.get())
+            if not tree_atual or not tree_atual.exists(row_id):
+                return
+                
+            if salvar:
+                novo_valor = widget.get()
+                valores = list(tree_atual.item(row_id, "values"))
+                meu_valor = valores[col_index]
+
+                if novo_valor != meu_valor:
+                    valores[col_index] = novo_valor
+                    tree_atual.item(row_id, values=valores)
+
+                    # Atualiza no banco
+                    id_tarefa = valores[0]
+                    data_evento = valores[2]
+
+                    if col_index == 3:
+                        self._atualizar_status_no_banco(id_tarefa, data_evento, novo_valor)
+                    elif col_index == 4:
+                        self._atualizar_responsavel_no_banco(id_tarefa, data_evento, novo_valor)
+                    elif col_index == 5:
+                        self._atualizar_observacoes_no_banco(id_tarefa, data_evento, novo_valor)
+
+        finally:
+            editor.destroy()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import sys
+from functools import partial
+from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+                             QHBoxLayout, QPushButton, QFrame, QLabel, QStackedWidget)
+from PySide6.QtCore import Qt
 import config
-import tkinter as tk
-import customtkinter as ctk
 from logger import Logger
-from tkinter import filedialog
-import pandas as pd
-from datetime import datetime
+# from database import DatabaseManager  <-- Removido
+from welcome_view import WelcomeView
+from zzz import RadarSaldosView
+from views.escrituracao.cadastro_eventos import CadastroEventosView
+from views.financeiro_b3.teste import STRview
+from views.financeiro_b3.cambio import Cambio
+
+from views.checklist import Checklist   
+from views.painel_acompanhamento import PainelAcompanhamentoView
+
+# Estilos CSS (QSS)
+STYLES = f"""
+    QMainWindow {{
+        background-color: {config.BRANCO};
+    }}
+    QFrame#TopMenu {{
+        background-color: {config.AZUL};
+        border: none;
+    }}
+    QFrame#SideMenu {{
+        background-color: {config.AZUL};
+        border: none;
+    }}
+    QFrame#Content {{
+        background-color: {config.CINZA_CLARO};
+    }}
+    QPushButton {{
+        background-color: {config.AZUL};
+        color: white;
+        border: none;
+        padding: 10px 15px;
+        text-align: left;
+        font-family: Arial;
+        font-size: 14px;
+    }}
+    QPushButton:hover {{
+        background-color: {config.AZUL_HOVER};
+    }}
+    QPushButton[active="true"] {{
+        background-color: {config.AZUL_HOVER};
+        font-weight: bold;
+        border-left: 4px solid white;
+    }}
+    QLabel {{
+        font-family: Arial;
+    }}
+"""
+
+class MainApplication(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle(config.NOME_JANELA)
+        
+        # Configuração de tela (Maximizado)
+        screen = QApplication.primaryScreen().geometry()
+        self.setGeometry(0, 0, screen.width(), screen.height())
+
+        # Gerenciamento de estado
+        self.tabs_cache = {} 
+        self.current_area = None
+        self.current_superarea = None
+        self.current_side_menu_tabs = {}
+        self.menu_buttons = {} 
+
+        # Database removido daqui
+
+        self.setup_ui()
+        self.define_structure()
+        
+        # Estado inicial
+        self._update_top_menu([])
+        self._show_initial_sidebar()
+        self._show_welcome()
+
+    def setup_ui(self):
+        # Widget Central
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # 1. Top Menu
+        self.top_menu_frame = QFrame()
+        self.top_menu_frame.setObjectName("TopMenu")
+        self.top_menu_frame.setFixedHeight(50)
+        self.top_menu_layout = QHBoxLayout(self.top_menu_frame)
+        self.top_menu_layout.setContentsMargins(10, 0, 0, 0)
+        self.top_menu_layout.setSpacing(10)
+        self.top_menu_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        
+        main_layout.addWidget(self.top_menu_frame)
+
+        # 2. Container Inferior
+        content_container = QWidget()
+        container_layout = QHBoxLayout(content_container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+        
+        # Side Menu
+        self.menu_frame = QFrame()
+        self.menu_frame.setObjectName("SideMenu")
+        self.menu_frame.setFixedWidth(220)
+        
+        self.menu_layout = QVBoxLayout(self.menu_frame)
+        self.menu_layout.setContentsMargins(0, 10, 0, 10)
+        self.menu_layout.setSpacing(2)
+        
+        container_layout.addWidget(self.menu_frame)
+
+        # Conteúdo Principal (Stack)
+        self.conteudo_frame = QFrame()
+        self.conteudo_frame.setObjectName("Content")
+        self.conteudo_layout = QVBoxLayout(self.conteudo_frame)
+        self.conteudo_layout.setContentsMargins(20, 20, 20, 20)
+        
+        self.main_stack = QStackedWidget()
+        self.conteudo_layout.addWidget(self.main_stack)
+        
+        container_layout.addWidget(self.conteudo_frame)
+        main_layout.addWidget(content_container)
+
+        self.setStyleSheet(STYLES)
+
+    def define_structure(self):
+        self.SUPERAREAS = {
+            'Financeiro': {
+                'Escrituração': {
+                    'Cadastro de Evento': CadastroEventosView, 'Radar de Contas': None, 'Anexos OM5': None, 
+                    'Checklist': None, 'Painel de acompanhamento': None, 'Salvar Extratos': None,
+                    'Batimento de Provisão': None, 'Radar de Eventos': None,
+                },
+                'Financeiro B3': {
+                    'Checklist': partial(Checklist, esteiras=['BM&&F', 'RV local', 'RV INR']),
+                    'Oainel Checklist': partial(PainelAcompanhamentoView, esteiras=['Esteira A', 'Esteira B', 'Esteira C'], emails=None), 
+                    'Envio de Taxas': None, 'Radar de Eventos': None, 'Radar de Saldos': RadarSaldosView,
+                    'Câmbio': Cambio,
+                    'TESTE': STRview
+                },
+                'Câmbio e Caixa': {'Checklist': None, 'Painel de Acompanhamento': None, 'Vendas Descobertas': None},
+                'Painel de Eventos': {'Painel de Eventos': None},
+                'Copiloto': {'Processo 1': None, 'Processo 2': None}
+            },
+            'RV': {
+                'Esteira 1': {'Processo 1': None, 'Processo 2': None},
+                'Esteira 2': {'Processo 1': None, 'Processo 2': None},
+            },
+            'RF': {
+                'CETIP': {'Checklist': None, 'Painel de Acompanhamento': None},
+                'Esteira 2': {'Processo 1': None, 'Processo 2': None},
+            }
+        }
+
+    # --- Helpers de UI ---
+    
+    def _clear_layout(self, layout):
+        if layout is not None:
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+
+    def _update_content_view(self, widget):
+        if self.main_stack.indexOf(widget) == -1:
+            self.main_stack.addWidget(widget)
+        self.main_stack.setCurrentWidget(widget)
+
+    # --- Lógica de Navegação ---
+
+    def _update_top_menu(self, areas):
+        self._clear_layout(self.top_menu_layout)
+
+        btn_inicio = QPushButton("Início")
+        btn_inicio.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_inicio.clicked.connect(self._go_home)
+        self.top_menu_layout.addWidget(btn_inicio)
+
+        for area_name in areas:
+            btn = QPushButton(area_name)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda checked, a=area_name: self.selecionar_area(a))
+            self.top_menu_layout.addWidget(btn)
+        
+        self.top_menu_layout.addStretch()
+
+    def _show_initial_sidebar(self):
+        self._clear_layout(self.menu_layout)
+        self.menu_buttons = {}
+
+        for nome_super in ['Financeiro', 'RV', 'RF']:
+            btn = QPushButton(nome_super)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda checked, s=nome_super: self.selecionar_superarea(s))
+            self.menu_layout.addWidget(btn)
+        
+        self.menu_layout.addStretch()
+
+    def _create_side_menu_for_area(self, abas_disponiveis: dict):
+        self._clear_layout(self.menu_layout)
+        self.menu_buttons = {}
+
+        if not abas_disponiveis:
+            self.menu_layout.addStretch()
+            return
+
+        for nome_aba in abas_disponiveis:
+            btn = QPushButton(nome_aba)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setProperty("active", False)
+            btn.clicked.connect(lambda checked, a=nome_aba: self.selecionar_aba(a))
+            self.menu_layout.addWidget(btn)
+            self.menu_buttons[nome_aba] = btn
+        
+        self.menu_layout.addStretch()
+
+    def _show_welcome(self):
+        key = ('Início', None)
+        if key not in self.tabs_cache:
+            # Removido argumento db_manager
+            self.tabs_cache[key] = WelcomeView() 
+        
+        self._update_content_view(self.tabs_cache[key])
+
+    def _go_home(self):
+        self.current_superarea = None
+        self.current_area = None
+        self._update_top_menu([])
+        self._show_initial_sidebar()
+        self._show_welcome()
+
+    def selecionar_superarea(self, superarea_name: str):
+        self.current_superarea = superarea_name
+        areas = list(self.SUPERAREAS.get(superarea_name, {}).keys())
+        
+        self._update_top_menu(areas)
+
+        if areas:
+            self.selecionar_area(areas[0])
+        else:
+            key = (f"PLACEHOLDER_SUPER_{superarea_name}", None)
+            if key not in self.tabs_cache:
+                lbl = QLabel(f"Superárea '{superarea_name}' em desenvolvimento.")
+                lbl.setStyleSheet("font-size: 18px; color: #666;")
+                lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.tabs_cache[key] = lbl
+            
+            self._update_content_view(self.tabs_cache[key])
+
+    def selecionar_area(self, area_name: str):
+        if not self.current_superarea:
+            self._go_home()
+            return
+
+        self.current_area = area_name
+        area_dict = self.SUPERAREAS.get(self.current_superarea, {})
+        abas = area_dict.get(area_name, {})
+        self.current_side_menu_tabs = abas
+
+        self._create_side_menu_for_area(abas)
+
+        if abas:
+            primeira_aba = list(abas.keys())[0]
+            self.selecionar_aba(primeira_aba)
+        else:
+            key = (f"PLACEHOLDER_AREA_{area_name}", None)
+            if key not in self.tabs_cache:
+                lbl = QLabel(f"Área '{area_name}' em desenvolvimento.")
+                lbl.setStyleSheet("font-size: 18px; color: #666;")
+                lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.tabs_cache[key] = lbl
+            
+            self._update_content_view(self.tabs_cache[key])
+
+    def selecionar_aba(self, nome_aba: str):
+        for name, button in self.menu_buttons.items():
+            if name == nome_aba:
+                button.setProperty("active", True)
+            else:
+                button.setProperty("active", False)
+            button.style().unpolish(button)
+            button.style().polish(button)
+
+        view_class = self.current_side_menu_tabs.get(nome_aba)
+        key = (f"{self.current_superarea}:{self.current_area}", nome_aba)
+
+        if key not in self.tabs_cache:
+            if view_class:
+                # Instancia a view SEM passar db_manager
+                self.tabs_cache[key] = view_class(self.conteudo_frame)
+            else:
+                placeholder = QWidget()
+                v_layout = QVBoxLayout(placeholder)
+                lbl = QLabel(f"Aba '{nome_aba}'\nEm Desenvolvimento")
+                lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                lbl.setStyleSheet("font-size: 20px; color: #888; font-weight: bold;")
+                v_layout.addWidget(lbl)
+                self.tabs_cache[key] = placeholder
+        
+        self._update_content_view(self.tabs_cache[key])
+    
+    # O método closeEvent pode ser removido pois não há conexão para fechar, 
+    # mas se quiser manter para logs futuros, basta deixar pass
+    def closeEvent(self, event):
+        event.accept()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import os
+import win32com.client
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
+    QScrollArea, QFrame, QMessageBox, QSizePolicy
+)
+from PySide6.QtGui import (
+    QPixmap, QPainter, QColor, QPen, QFont, QCursor
+)
+from PySide6.QtCore import Qt, QRectF
+
+# =====================================================================
+# WIDGET CUSTOMIZADO: Gráfico de Progresso Circular
+# Substitui o Canvas do Tkinter pelo QPainter do Qt (Alta qualidade)
+# =====================================================================
+class CircularProgress(QWidget):
+    def __init__(self, percentual, parent=None):
+        super().__init__(parent)
+        self.percentual = percentual
+        self.setFixedSize(80, 80) # Mesmo tamanho original
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        rect = QRectF(10, 10, 60, 60)
+        
+        # Desenha o fundo (círculo completo)
+        pen_bg = QPen(QColor("#E5E7EB"), 8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen_bg)
+        painter.drawArc(rect, 0, 360 * 16)
+
+        # Desenha o progresso
+        if self.percentual > 0:
+            pen_fg = QPen(QColor("#10B981"), 8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen_fg)
+            # Qt usa 1/16 de grau. 90 * 16 é o topo. Multiplica por negativo para sentido horário.
+            span_angle = int(-360 * self.percentual * 16)
+            painter.drawArc(rect, 90 * 16, span_angle)
+
+        # Texto central
+        painter.setPen(QColor("#374151"))
+        font = QFont("Arial", 16, QFont.Weight.Bold)
+        painter.setFont(font)
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, f"{int(self.percentual * 100)}%")
+
+# =====================================================================
+# CLASSE PRINCIPAL DA VIEW
+# =====================================================================
+class PainelAcompanhamentoView(QWidget):
+    def __init__(self, parent=None, db_manager=None, emails=None, esteiras=None):
+        super().__init__(parent)
+        
+        self.db_manager = db_manager
+        self.config = emails
+        self.esteiras = list(esteiras) if esteiras else []
+        
+        # Dicionário de cores (Mantido)
+        self.status_colors = {
+            "Pendente": "#E5A00D",
+            "Em andamento": "#0052cc",
+            "Concluído": "#03A062",
+            "Atraso": "#D32F2F",
+            "Não se aplica": "#9E9E9E"
+        }
+
+        self.setup_ui()
+        self.carregar_painel()
+
+    def setup_ui(self):
+        # Layout principal da janela
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(20, 20, 20, 20)
+        self.main_layout.setSpacing(10)
+
+        # --- CABEÇALHO ---
+        header_layout = QHBoxLayout()
+        
+        # Logo (Certifique-se de que o caminho exista)
+        self.logo_label = QLabel()
+        if os.path.exists("intern/logo_itaú.png"):
+            pixmap = QPixmap("intern/logo_itaú.png").scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            self.logo_label.setPixmap(pixmap)
+        header_layout.addWidget(self.logo_label)
+        
+        # Título
+        title_label = QLabel("Painel de Acompanhamento")
+        title_label.setStyleSheet("font-family: Arial; font-size: 28px; font-weight: bold;")
+        header_layout.addWidget(title_label)
+        header_layout.addStretch() # Empurra tudo para a esquerda
+        
+        self.main_layout.addLayout(header_layout)
+
+        # Linha Divisória
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setFrameShadow(QFrame.Shadow.Sunken)
+        line.setStyleSheet("background-color: black;")
+        self.main_layout.addWidget(line)
+
+        # --- TOOLBAR ---
+        toolbar_layout = QHBoxLayout()
+        toolbar_layout.addStretch() # Centraliza os botões
+        
+        # Botões (Estilizados via QSS)
+        btn_style = """
+            QPushButton {
+                background-color: #f0f0f0; 
+                border: 1px solid #ccc;
+                border-radius: 5px;
+                padding: 10px 20px;
+                font-family: Arial; font-size: 14px;
+            }
+            QPushButton:hover { background-color: #e0e0e0; }
+        """
+        
+        btn_atualizar = QPushButton("Atualizar Dados")
+        btn_atualizar.setStyleSheet(btn_style)
+        btn_atualizar.clicked.connect(self.carregar_painel)
+        toolbar_layout.addWidget(btn_atualizar)
+        
+        btn_exportar = QPushButton("Exportar Painel")
+        btn_exportar.setStyleSheet(btn_style)
+        btn_exportar.clicked.connect(self.exportar_painel_email)
+        toolbar_layout.addWidget(btn_exportar)
+        
+        toolbar_layout.addStretch()
+        self.main_layout.addLayout(toolbar_layout)
+
+        # --- LEGENDA ---
+        legend_layout = QHBoxLayout()
+        legend_layout.addStretch()
+        ordem = ["Pendente", "Em andamento", "Concluído", "Atraso", "Não se aplica"]
+        
+        for status in ordem:
+            cor = self.status_colors[status]
+            # Usando HTML no texto da label para fazer a bolinha colorida
+            lbl = QLabel(f"<span style='color: {cor}; font-size: 18px;'>●</span> <span style='font-family: Arial; font-size: 13px;'>{status}</span>")
+            legend_layout.addWidget(lbl)
+            legend_layout.addSpacing(15)
+            
+        legend_layout.addStretch()
+        self.main_layout.addLayout(legend_layout)
+
+        # --- CONTAINER DO PAINEL (SCROLL NATIVO) ---
+        # No PySide6, QScrollArea substitui todo aquele hack gigante do Tkinter Canvas
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        
+        self.scroll_content = QWidget()
+        self.scroll_content.setStyleSheet("background: transparent;")
+        
+        # Layout horizontal para enfileirar as colunas (Esteiras)
+        self.colunas_layout = QHBoxLayout(self.scroll_content)
+        self.colunas_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        
+        self.scroll_area.setWidget(self.scroll_content)
+        self.main_layout.addWidget(self.scroll_area, 1) # weight 1 para expandir
+
+    # Lógica de negócio mantida intacta
+    # def _buscar_dados_painel(self):
+    #     try:
+    #         cursor = self.db_manager.conn.cursor()
+    #         query = f"""
+    #             SELECT t.Id, t.Tarefa, t.Esteira, t.Observacoes, 
+    #                    t.Status, t.Peso
+    #             FROM li_checklist_TAREFAS t
+    #             LEFT JOIN li_checklist_ID id ON t.Id = id.Id_tarefa
+    #             WHERE a.Data = '{self.config['MÊS']}'
+    #         """
+            
+    #         like_clauses = [f"t.Esteira LIKE '%{esteira}%'" for esteira in self.esteiras]
+    #         query += " AND (" + " OR ".join(like_clauses) + ")"
+            
+    #         query += " ORDER BY t.Horario_conclusao, t.Esteira"
+            
+    #         cursor.execute(query)
+    #         dados = cursor.fetchall()
+            
+    #         return dados
+    #     except Exception as e:
+    #         print(f"Erro ao buscar dados do painel: {e}")
+    #         return []
+
+    def _buscar_dados_painel(self):
+        """
+        Retorna dados simulados em vez de consultar o banco de dados.
+        O formato esperado da tupla é: (id_tarefa, tarefa, esteira_str, obs, status, peso)
+        """
+        dados_simulados = [
+            (1, "Análise de Crédito Inicial", "Esteira A", "Prioridade alta - Cliente VIP", "Concluído", 10),
+            (2, "Verificação de Documentos de Identidade", "Esteira A", None, "Em andamento", 5),
+            (3, "Aprovação da Gerência", "Esteira A", "Aguardando retorno do comitê", "Pendente", 8),
+            (4, "Auditoria Interna de Processos", "Esteira B", "Verificar conformidade com a nova norma", "Atraso", 15),
+            (5, "Emissão de Contrato Físico", "Esteira B", None, "Pendente", 10),
+            (6, "Assinatura Digital de Diretoria", "Esteira B", "Aguardando token", "Em andamento", 5),
+            (7, "Validação no Sistema Legado", "Esteira C", "Sistema esteve instável na terça-feira", "Não se aplica", 0),
+            (8, "Envio de Kit Boas-Vindas", "Esteira C", None, "Concluído", 5),
+            (9, "Pesquisa de Satisfação", "Esteira C", None, "Concluído", 2)
+        ]
+        
+        # Filtra os dados simulados para exibir apenas as esteiras passadas na inicialização da view
+        dados_filtrados = []
+        for linha in dados_simulados:
+            esteira_str = linha[2]
+            for est in self.esteiras:
+                if est in esteira_str:
+                    dados_filtrados.append(linha)
+                    break
+                    
+        return dados_filtrados
+
+    def carregar_painel(self):
+        # Limpa o conteúdo atual do layout de colunas
+        while self.colunas_layout.count():
+            item = self.colunas_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+                
+        dados = self._buscar_dados_painel()
+        
+        if not dados:
+            lbl = QLabel("Nenhuma tarefa encontrada.")
+            lbl.setStyleSheet("font-family: Arial; font-size: 16px;")
+            self.colunas_layout.addWidget(lbl)
+            return
+            
+        COL_WIDTH = 525 # Mesma largura do original
+        
+        # Organiza dados por esteira (Lógica de negócio mantida)
+        tarefas_por_esteira = {}
+        for row in dados:
+            id_tarefa, tarefa, esteira_str, obs, status, peso = row
+            for est in self.esteiras:
+                if est in esteira_str:
+                    tarefas_por_esteira.setdefault(est, []).append((tarefa, status, obs, peso))
+                    break 
+
+        # Cria as colunas dinamicamente
+        for esteira in self.esteiras:
+            tarefas = tarefas_por_esteira.get(esteira, [])
+            
+            total_peso = sum(t[3] for t in tarefas)
+            concluido_peso = sum(t[3] for t in tarefas if t[1] == 'Concluído')
+            progresso_perc = (concluido_peso / total_peso) if total_peso > 0 else 0
+            
+            # Frame da coluna
+            col_frame = QFrame()
+            col_frame.setFixedWidth(COL_WIDTH)
+            col_layout = QVBoxLayout(col_frame)
+            col_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+            
+            # Cabeçalho da coluna (Gráfico + Título)
+            header_layout = QVBoxLayout()
+            header_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            
+            # Gráfico Circular Customizado
+            grafico = CircularProgress(progresso_perc)
+            header_layout.addWidget(grafico, alignment=Qt.AlignmentFlag.AlignCenter)
+            
+            # Título da Esteira
+            lbl_esteira = QLabel(esteira)
+            lbl_esteira.setStyleSheet("font-family: Arial; font-size: 18px; font-weight: bold; color: #1E3A8A;")
+            header_layout.addWidget(lbl_esteira, alignment=Qt.AlignmentFlag.AlignCenter)
+            
+            col_layout.addLayout(header_layout)
+            col_layout.addSpacing(15)
+            
+            # Lista de tarefas (Cards)
+            for tarefa, status, obs, peso in tarefas:
+                # Estilização do Card via CSS
+                card = QFrame()
+                card.setStyleSheet("""
+                    QFrame {
+                        background-color: white;
+                        border: 1px solid #E5E7EB;
+                        border-radius: 8px;
+                    }
+                """)
+                card_layout = QHBoxLayout(card)
+                card_layout.setContentsMargins(10, 10, 10, 10)
+                
+                cor_status = self.status_colors.get(status, "#000000")
+                
+                # Bolinha de status via HTML
+                lbl_status = QLabel(f"<span style='color: {cor_status}; font-size: 18px;'>●</span>")
+                lbl_status.setStyleSheet("border: none; background: transparent;")
+                card_layout.addWidget(lbl_status)
+                
+                # Texto da tarefa
+                lbl_tarefa = QLabel(tarefa)
+                lbl_tarefa.setStyleSheet("font-family: Arial; font-size: 13px; color: #374151; border: none; background: transparent;")
+                lbl_tarefa.setWordWrap(True) # Substitui o wraplength do Tkinter
+                card_layout.addWidget(lbl_tarefa, 1) # weight 1 para ocupar espaço
+                
+                # Ícone de Observação com Tooltip nativo
+                if obs and str(obs).strip() and obs != "None":
+                    info_icon = QLabel("ℹ️")
+                    info_icon.setStyleSheet("color: #6B7280; font-size: 16px; border: none; background: transparent;")
+                    info_icon.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+                    # Tooltip nativo do PySide6 substitui as funções customizadas _mostrar_tooltip e _esconder_tooltip
+                    info_icon.setToolTip(f"<span style='font-family: Arial; font-size: 12px;'>{obs}</span>") 
+                    card_layout.addWidget(info_icon)
+                
+                col_layout.addWidget(card)
+            
+            self.colunas_layout.addWidget(col_frame)
+
+    def exportar_painel_email(self):
+        try:
+            # 1. Tira o print da área de scroll inteira 
+            # O PySide6 permite tirar print de widgets maiores que a tela (Adeus à função Mosaico do Tkinter!)
+            pixmap = self.scroll_content.grab() 
+            
+            if pixmap.isNull():
+                QMessageBox.critical(self, "Exportar Painel", "Falha ao capturar o painel.")
+                return
+                
+            # 2. Salva em arquivo temporário
+            export_dir = os.path.join(os.getcwd(), "Exportacoes")
+            if not os.path.exists(export_dir):
+                os.makedirs(export_dir)
+                
+            mes_seguro = str(self.config['MÊS']).replace('/','-')
+            filename = f"Painel_{mes_seguro}.png"
+            caminho_img = os.path.join(export_dir, filename)
+            pixmap.save(caminho_img, "PNG")
+            
+            # 3. Abre o Outlook (Lógica de negócio mantida intacta)
+            outlook = win32com.client.Dispatch('outlook.application')
+            mail = outlook.CreateItem(0)
+            
+            mail.To = ""
+            mail.Subject = f"Painel de Acompanhamento - {self.config['MÊS']}"
+            
+            attachment = mail.Attachments.Add(caminho_img)
+            attachment.PropertyAccessor.SetProperty("http://schemas.microsoft.com/mapi/proptag/0x3712001E", "painel_img")
+            
+            mail.HTMLBody = f"""
+            <html>
+                <body>
+                    <p>Olá,</p>
+                    <p>Segue o painel de acompanhamento do mês de {self.config['MÊS']}:</p>
+                    <img src="cid:painel_img">
+                    <p>Atenciosamente,</p>
+                </body>
+            </html>
+            """
+            mail.Display() 
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Exportar Painel", f"Ocorreu um erro ao exportar:\n{e}")
+
+
+
+
+# if __name__ == "__main__":
+#     import sys
+#     from PySide6.QtWidgets import QApplication
+    
+#     app = QApplication(sys.argv)
+    
+#     # Configurações simuladas para a interface inicializar
+#     config_mock = {"MÊS": "06/2026"}
+#     esteiras_mock = ["Esteira A", "Esteira B", "Esteira C"]
+    
+#     # Inicializa a janela passando None para o db_manager
+#     janela = PainelAcompanhamentoView(
+#         db_manager=None, 
+#         config=config_mock, 
+#         esteiras=esteiras_mock
+#     )
+    
+#     janela.setWindowTitle("Preview do Dashboard - PySide6")
+#     janela.resize(1200, 800) # Define um tamanho inicial bacana
+#     janela.show()
+    
+#     sys.exit(app.exec())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+from datetime import date, datetime
+
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+                               QLabel, QLineEdit, QComboBox, QPushButton,
+                               QTabWidget, QTableWidget, QTableWidgetItem,
+                               QHeaderView, QFrame, QAbstractItemView, QMessageBox, QDialog)
+from PySide6.QtGui import QPixmap, QFont
+from PySide6.QtCore import Qt
+
+from config import create_button, create_header
+import config
 
 import customtkinter as ctk
 from tkinter import ttk
 from tkinter import messagebox
+import os
 
-class EmailsCorretorasview(ctk.CTkFrame):
-    def __init__(self, parent):
-        #def __init__(self, parent, db_manager):
-        super().__init__(parent, fg_color="transparent")
+class Checklist(QWidget):
+    def __init__(self, parent=None, db_manager=None, esteiras=None):
+        super().__init__(parent)
+        self.db_manager = db_manager
+        
+        # Garante que esteiras_lista seja convertida para lista ou inicie vazia
+        self.esteiras = esteiras
+        self._edit_window_info = None
 
-        #self.db_manager = db_manager
+        self.create_widgets()
+        
+        # Métodos comentados pois a implementação não está no escopo, mas eles seriam chamados aqui
+        self.inserir_dados()
+        self.filtrar()
+    def create_widgets(self):
+        # Layout principal da tela (Vertical)
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        
+        header_layout, linha_layout = create_header("Checklist")
+        self.main_layout.addLayout(header_layout)
+        self.main_layout.addLayout(linha_layout)
+
+        # --- FILTROS ---
+        filtro_layout = QGridLayout()
+        filtro_layout.setSpacing(10)
+        
+        # Margens: Esquerda, Topo (distância da linha), Direita, Baixo (distância das abas)
+        filtro_layout.setContentsMargins(0, 15, 0, 30)
+
+        # Configuração da fonte para as Labels
+        fonte_labels = QFont("Arial", 11)
+
+        # Lógica de formatação de data
+        data_str = str(date.today()).split("-")
+        data_str.reverse()
+        data_str = "/".join(data_str)
+
+        # 1. Spacer invisível à esquerda (empurra os itens para o centro)
+        filtro_layout.setColumnStretch(0, 1)
+
+        # 2. Data
+        lbl_data = QLabel("Data:")
+        lbl_data.setFont(fonte_labels)
+        filtro_layout.addWidget(lbl_data, 0, 1)
+        
+        self.data_entry = QLineEdit(data_str)
+        self.data_entry.setFixedWidth(120)
+        self.data_entry.setFixedHeight(30) # Emparelha com a altura dos botões
+        filtro_layout.addWidget(self.data_entry, 1, 1)
+
+        # 3. Status
+        lbl_status = QLabel("Status:")
+        lbl_status.setFont(fonte_labels)
+        filtro_layout.addWidget(lbl_status, 0, 2)
+        
+        self.status_menu = QComboBox()
+        status_opcoes = ["Todos", "Pendente", "Em andamento", "Concluído", "Em atraso", "Não se aplica"]
+        self.status_menu.addItems(status_opcoes)
+        self.status_menu.setFixedWidth(130)
+        self.status_menu.setFixedHeight(30)
+        filtro_layout.addWidget(self.status_menu, 1, 2)
+
+        # 4. Nome Tarefa
+        lbl_tarefa = QLabel("Tarefa:")
+        lbl_tarefa.setFont(fonte_labels)
+        filtro_layout.addWidget(lbl_tarefa, 0, 3)
+        
+        self.tarefa_entry = QLineEdit()
+        self.tarefa_entry.setFixedWidth(200)
+        self.tarefa_entry.setFixedHeight(30)
+        filtro_layout.addWidget(self.tarefa_entry, 1, 3)
+
+        # 5. Botões
+        self.filtrar_button = create_button("Filtrar", width=120, height=30)
+        self.filtrar_button.clicked.connect(self.filtrar)
+
+
+
+        #======= VÊ SE ISSO AQUI FUNCIONA =======#
+        self.tarefa_entry.textChanged.connect(self.filtrar)
+        self.status_menu.currentTextChanged.connect(self.filtrar)
+        self.data_entry.textChanged.connect(self.filtrar)
+
+
+
+
+        filtro_layout.addWidget(self.filtrar_button, 1, 4, alignment=Qt.AlignmentFlag.AlignBottom)
+
+        self.cadastrar_button = create_button("Evento Especial", width=150, height=30)
+        self.cadastrar_button.clicked.connect(self.gerenciar_evento_especial)
+        filtro_layout.addWidget(self.cadastrar_button, 1, 5, alignment=Qt.AlignmentFlag.AlignBottom)
+        
+        # 6. Spacer invisível à direita (junto com o da esquerda, centraliza os itens do meio)
+        filtro_layout.setColumnStretch(6, 1)
+        
+        self.main_layout.addLayout(filtro_layout)
+
+        # --- TABELAS EM ABAS ---
+        self.abas_widget = QTabWidget()
+        self.trees = {}  # Dicionário para armazenar as QTableWidgets por aba
+
+        # --- ESTILIZAÇÃO QSS (Tabelas e Abas) ---
+        estilo_qss = f"""
+            QTabWidget::tab-bar {{ alignment: center; }}
+            QTabBar::tab {{ background-color: #e0e0e0; color: #333; padding: 8px 20px; margin: 2px; border-radius: 4px; font-weight: bold; }}
+            QTabBar::tab:selected {{ background-color: {config.AZUL}; color: white; }}
+            QTabBar::tab:hover:!selected {{ background-color: {config.AZUL_HOVER}; color: white; }}
+            QTableWidget {{ background-color: white; alternate-background-color: #f7f7f7; gridline-color: #dcdcdc; selection-background-color: {config.AZUL}; selection-color: white; border: 1px solid #dcdcdc; }}
+            QTableWidget::item:hover {{ background-color: {config.AZUL_HOVER}; color: white; }}
+            QHeaderView::section {{ background-color: {config.AZUL}; color: white; font-weight: bold; padding: 4px; border: 1px solid #c0c0c0; }}
+        """
+        self.abas_widget.setStyleSheet(estilo_qss)
+
+        esteiras_todas = ["Todas"] + self.esteiras
+        columns = ["ID Tarefa", "Tarefa", "Data Evento", "Status",
+                   "Responsável", "Observação", "Data Atualização", "Esteira"]
+
+        for nome_aba in esteiras_todas:
+            # Cria a tabela
+            table = QTableWidget(0, len(columns))
+            table.setHorizontalHeaderLabels(columns)
+            table.verticalHeader().setVisible(False)
+
+            # Configurações gerais da tabela
+            table.setAlternatingRowColors(True)  # Fundo zebrado configurado no QSS
+            table.setSelectionBehavior(QAbstractItemView.SelectRows) # Seleciona a linha inteira
+            table.setEditTriggers(QAbstractItemView.NoEditTriggers) # Torna apenas leitura
+            
+            # Habilita o rastreio do mouse para o efeito de hover funcionar nas linhas
+            table.setMouseTracking(True)
+
+            table.cellDoubleClicked.connect(self.editar_celula)
+
+            if nome_aba == "Todas":
+                # Configurações de colunas para "Todas"
+                table.setColumnHidden(0, True) # Oculta "ID Tarefa"
+                table.setColumnWidth(1, 200)
+                table.setColumnWidth(2, 100)
+                table.setColumnWidth(3, 100)
+                table.setColumnWidth(4, 150)
+                table.setColumnWidth(5, 200)
+                table.setColumnWidth(6, 150)
+                table.setColumnWidth(7, 100)
+            else:
+                # Configurações de colunas para abas específicas
+                table.setColumnHidden(0, True) # Oculta "ID Tarefa"
+                table.setColumnHidden(7, True) # Oculta "Esteira"
+                table.setColumnWidth(1, 250)
+                table.setColumnWidth(2, 120)
+                table.setColumnWidth(3, 120)
+                table.setColumnWidth(4, 150)
+                table.setColumnWidth(5, 250)
+                table.setColumnWidth(6, 150)
+
+            # Stretch (expansão) nas colunas
+            header = table.horizontalHeader()
+            header.setSectionResizeMode(QHeaderView.Interactive)
+            header.setStretchLastSection(True) # A última coluna estica para preencher a tela
+
+            self.abas_widget.addTab(table, nome_aba)
+            self.trees[nome_aba] = table
+
+        self.main_layout.addWidget(self.abas_widget)
+
+
+
+    def inserir_dados(self):
+        return
+        """Insere as tarefas diárias pela primeira vez no dia"""
+        conn = self.db_manager.conn
+        cursor = conn.cursor()
+
+        # Busca todos os IDs de tarefas que não são esporádicas
+        query = """
+            SELECT id
+            FROM liq.CHECKLIST_TAREFAS
+            WHERE esteira NOT LIKE 'ES - %'
+        """
+        cursor.execute(query)
+        tarefas = cursor.fetchall()
+
+        # Insere cada tarefa na execução de hoje
+        for tarefa in tarefas:
+            id_tarefa = tarefa[0]
+            query = f"""
+                INSERT INTO liq.CHECKLIST_EXECUCAO (id_tarefa, data)
+                VALUES ({id_tarefa}, '{config.HOJE}')
+            """
+            try:
+                cursor.execute(query)
+            except:
+                pass
+
+        conn.commit()
+    def filtrar(self):
+        """Aplica os filtros e insere os dados na treeview"""
+        self.revisar_status()
+
+        # Formatar a data para ISO para a busca
+        bruto = (self.data_entry.text() or "").strip()
+        partes = bruto.split("/") if "/" in bruto else bruto.split("-")
+
+        dd = partes[0] if len(partes) > 0 else ""
+        mm = partes[1] if len(partes) > 1 else ""
+        aaaa = partes[2] if len(partes) > 2 else ""
+
+        # Só considera válida se estiver completa
+        if len(dd) == 2 and len(mm) == 2 and len(aaaa) == 4:
+            data_iso = f"{aaaa}-{mm}-{dd}"
+        else:
+            data_iso = None  # ou "" se o backend exigir string
+
+        status = self.status_menu.currentText()
+        status = None if status == "" else status
+        tarefa = self.tarefa_entry.text()
+
+        for nome_aba, table in self.trees.items():
+            esteira_param = None if nome_aba == "Todas" else nome_aba
+
+            dados = self.consultar_checklist(
+                data=data_iso,
+                status=status,
+                tarefa=tarefa,
+                esteira=esteira_param
+            )
+
+            # Limpa a tabela PySide6
+            table.setRowCount(0)
+
+            for linha_idx, linha in enumerate(dados):
+                table.insertRow(linha_idx)
+                table.setItem(linha_idx, 0, QTableWidgetItem(str(linha.get("id_tarefa", ""))))
+                table.setItem(linha_idx, 1, QTableWidgetItem(str(linha.get("tarefa", ""))))
+                table.setItem(linha_idx, 2, QTableWidgetItem(str(linha.get("data_evento", ""))))
+                table.setItem(linha_idx, 3, QTableWidgetItem(str(linha.get("status", ""))))
+                table.setItem(linha_idx, 4, QTableWidgetItem(str(linha.get("responsavel", ""))))
+                table.setItem(linha_idx, 5, QTableWidgetItem(str(linha.get("observacoes", ""))))
+                data_att = self._formatar_data_atualizacao(linha.get("data_atualizacao", ""))
+                table.setItem(linha_idx, 6, QTableWidgetItem(str(data_att)))
+                table.setItem(linha_idx, 7, QTableWidgetItem(str(linha.get("esteira", ""))))
+    def aplicar_listras(self, treeview: ttk.Treeview):
+        """Aplica as cores alternadas nas linhas da treeview"""
+        return
+        children = treeview.get_children("")
+        for i, iid in enumerate(children):
+            tag = "even" if i % 2 == 0 else "odd"
+            treeview.item(iid, tags=(tag,))
+    def consultar_checklist(self, data=None, status=None, tarefa=None, esteira=None):
+        return [
+    {
+        "id_tarefa": 1,
+        "tarefa": "Validar posição de fechamento",
+        "esteira": "BM&F",
+        "data_evento": date(2026, 5, 24),
+        "status": "Concluído",
+        "responsavel": "Carlos Silva",
+        "observacoes": "Processamento realizado sem inconsistências.",
+        "data_atualizacao": datetime(2026, 5, 24, 9, 15, 32)
+    },
+    {
+        "id_tarefa": 2,
+        "tarefa": "Importar arquivo de custódia",
+        "esteira": "RV local",
+        "data_evento": date(2026, 5, 24),
+        "status": "Em andamento",
+        "responsavel": "Fernanda Lima",
+        "observacoes": "Aguardando confirmação do arquivo FTP.",
+        "data_atualizacao": datetime(2026, 5, 24, 10, 42, 11)
+    },
+    {
+        "id_tarefa": 3,
+        "tarefa": "Conciliação de operações internacionais",
+        "esteira": "RV INR",
+        "data_evento": date(2026, 5, 24),
+        "status": "Pendente",
+        "responsavel": "João Pereira",
+        "observacoes": "Dependente da carga do sistema externo.",
+        "data_atualizacao": datetime(2026, 5, 24, 11, 5, 48)
+    }
+]
+        conn = self.db_manager.conn
+        cursor = conn.cursor()
+
+        query = """
+            SELECT t.id AS id_tarefa, t.tarefa, t.esteira, t.data AS data_evento, e.status, 
+                   e.responsavel,
+                   e.observacoes, e.data_atualizacao
+            FROM liq.CHECKLIST_EXECUCAO e
+            JOIN liq.CHECKLIST_TAREFAS t ON e.id_tarefa = t.id
+            WHERE 1=1
+        """
+        params = []
+        
+        if data:
+            query += " AND e.data = ?"
+            params.append(data)
+
+        if status:
+            query += " AND e.status = ?"
+            params.append(status)
+
+        if tarefa:
+            query += " AND t.tarefa LIKE ?"
+            params.append(f"%{tarefa}%")
+            
+        if esteira:
+            query += " AND ("
+            esteira_conditions = []
+            for esteira_item in self.esteiras:
+                esteira_conditions.append("t.esteira LIKE ?")
+                params.append(f"%{esteira_item}%")
+            query += " OR ".join(esteira_conditions)
+            query += ")"
+                 
+        query += "\nORDER BY t.horario_conclusao"
+                 
+        cursor.execute(query, params)
+        
+        col_names = [desc[0] for desc in cursor.description]
+        resultados = [dict(zip(col_names, row)) for row in cursor.fetchall()]
+        
+        return resultados
+    def atualizar(self):
+        self.filtrar()
+    def editar_celula(self, row, col):
+        """Inicia a edição de uma célula nativamente via PySide6."""
+        table = self.sender() # Resgata a aba que emitiu o sinal
+        
+        # Colunas editáveis: Status (3), Observação (5)
+        if col not in (3, 5): 
+            return
+
+        valor_atual = table.item(row, col).text()
+        id_tarefa = int(table.item(row, 0).text())
+        data_evento = table.item(row, 2).text()
+
+        # Edição via Combobox para Status
+        if col == 3:
+            opcoes = ["Pendente", "Em andamento", "Concluído", "Em atraso", "Não se aplica"]
+            editor = QComboBox()
+            editor.addItems(opcoes)
+            editor.setCurrentText(valor_atual)
+
+            def salvar_status(texto):
+                self.atualizar_status_no_banco(id_tarefa, data_evento, texto)
+                table.item(row, col).setText(texto)
+                table.removeCellWidget(row, col)
+
+            # Usamos o sinal 'activated' para confirmar a escolha e finalizar o editor
+            editor.activated.connect(lambda _, cb=editor: salvar_status(cb.currentText()))
+            table.setCellWidget(row, col, editor)
+            editor.showPopup()
+
+        # Edição via LineEdit para Observações
+        elif col == 5:
+            editor = QLineEdit()
+            editor.setText(valor_atual)
+
+            def salvar_observacao():
+                novo_valor = editor.text()
+                self.atualizar_observacoes_no_banco(id_tarefa, data_evento, novo_valor)
+                table.item(row, col).setText(novo_valor)
+                table.removeCellWidget(row, col)
+
+            editor.editingFinished.connect(salvar_observacao)
+            table.setCellWidget(row, col, editor)
+            editor.setFocus()
+            # Seleciona todo o texto, como no tkinter
+            editor.selectAll()
+    def atualizar_status_no_banco(self, id_tarefa, data_evento, novo_status):
+        self.executar_update("status", id_tarefa, data_evento, novo_status)
+        return
+        try:
+            conn = self.db_manager.conn
+            cursor = conn.cursor()
+            
+            query = f"""
+                UPDATE liq.CHECKLIST_EXECUCAO
+                SET status = ?, 
+                    responsavel = '{os.getlogin().upper()}',
+                    data_atualizacao = GETDATE()
+                WHERE id_tarefa = ? AND data = ?
+            """
+            cursor.execute(query, (novo_status, id_tarefa, data_evento))
+            self.db_manager.conn.commit()
+            
+        except Exception as e:
+            messagebox.showerror(f"Erro ao atualizar", f"Não foi possível atualizar o status.\n{e}")
+    def atualizar_responsavel_no_banco(self, id_tarefa, data_evento, novo_valor):
+        self.executar_update("responsavel", id_tarefa, data_evento, novo_valor)
+    def atualizar_observacoes_no_banco(self, id_tarefa, data_evento, novo_valor):
+        self.executar_update("observacoes", id_tarefa, data_evento, novo_valor)
+    def executar_update(self, campo, id_tarefa, data_evento, novo_valor):
+        try:
+            conn = self.db_manager.conn
+            cursor = conn.cursor()
+            
+            query = f"""
+                UPDATE liq.CHECKLIST_EXECUCAO
+                SET {campo} = ?, 
+                    responsavel = '{os.getlogin().upper()}',
+                    data_atualizacao = GETDATE()
+                WHERE id_tarefa = ? AND data = ?
+            """
+            cursor.execute(query, (novo_valor, id_tarefa, data_evento))
+            self.db_manager.conn.commit()
+            
+        except Exception as e:
+            messagebox.showerror(f"Erro ao atualizar", f"Não foi possível atualizar o {campo}.\n{e}")
+    def formatar_data(self, *args):
+        """
+        Formata a string conforme a quantidade de dígitos
+        digitados para o formato DD/MM/AAAA.
+        """
+        valor = self.data_entry.text() or ''
+        numeros = ''.join(ch for ch in valor if ch.isdigit())[:8] # não sei se essa lnha está certa
+
+        novo = ""
+        # 0 a 2 dígitos: "DD" ou "D"
+        if len(numeros) <= 2:
+            novo = numeros
+        # 3 ou 4 dígitos: "DD/MM" ou "DD/M"
+        elif len(numeros) <= 4:
+            novo = f"{numeros[:2]}/{numeros[2:]}"
+        # 5 a 8 dígitos: "DD/MM/AAAA" (parcial se < 8)
+        else:
+            novo = f"{numeros[:2]}/{numeros[2:4]}/{numeros[4:]}"
+
+        # Evita sobrescrever se não mudou (reduz flicker/reentrância)
+        if valor != novo:
+            self.data_entry.setText(novo)
+    def buscar_eventos_especiais(self):
+        return [
+    "Validar pagamento",
+    "Enviar relatório",
+    "Conferir estoque"
+]
+        conn = self.db_manager.conn
+        cursor = conn.cursor()
+        query = """
+            SELECT DISTINCT(tarefa) 
+            FROM liq.CHECKLIST_TAREFAS 
+            WHERE esteira in (
+        """
+
+        est_temp = [f"'ES - {esteira}'" for esteira in self.esteiras]
+        query += ", ".join(est_temp)
+        query += ")"
+
+        cursor.execute(query)
+        resultados = [row[0] for row in cursor.fetchall()]
+        return resultados
+    def gerenciar_evento_especial(self):
+        popup = QDialog(self)
+        popup.setWindowTitle("Novo Evento Especial")
+        popup.setFixedSize(300, 275)
+
+        layout = QVBoxLayout(popup)
+        layout.setSpacing(6)
+        layout.setContentsMargins(20, 15, 20, 15)
+
+        label_tarefa = QLabel("Selecione a Tarefa:")
+        label_tarefa.setStyleSheet("font-size: 14px;")
+        layout.addWidget(label_tarefa)
+        tarefas = self.buscar_eventos_especiais()
+        tarefa_menu = QComboBox()
+        if tarefas:
+            tarefa_menu.addItems(tarefas)
+        tarefa_menu.setFixedHeight(35)  # aumenta altura
+        tarefa_menu.setStyleSheet(f"""QComboBox {{background-color: {config.AZUL};color: white; padding-left: 8px;}}""")
+        layout.addWidget(tarefa_menu)
+        layout.addSpacing(5)
+
+        label_esteira = QLabel("Selecione a Esteira:")
+        label_esteira.setStyleSheet("font-size: 14px;")
+        layout.addWidget(label_esteira)
+        esteira_menu = QComboBox()
+        if self.esteiras:
+            esteira_menu.addItems(self.esteiras)
+        esteira_menu.setFixedHeight(35)
+        esteira_menu.setStyleSheet(f"""QComboBox {{background-color: {config.AZUL};color: white; padding-left: 8px;}}""")
+        layout.addWidget(esteira_menu)
+        layout.addSpacing(15)
+        #largura_botoes = tarefa_menu.sizeHint().width()
+
+        adicionar_btn = create_button("Adicionar")
+        layout.addWidget(adicionar_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        remover_btn = create_button("Remover", width=140, height=40)
+        remover_btn.setStyleSheet("""QPushButton {background-color: #D32F2F; color: white; border-radius: 4px; font-weight: bold; text-align: center;}
+                                     QPushButton:hover {background-color: #B71C1C;}""")
+        layout.addWidget(remover_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        def adicionar_evento():
+            tarefa = tarefa_menu.currentText()
+            esteira = esteira_menu.currentText()
+
+            conn = self.db_manager.conn
+            cursor = conn.cursor()
+             
+            query = f"""
+                SELECT id
+                FROM liq.CHECKLIST_TAREFAS
+                WHERE tarefa = '{tarefa}'
+                AND esteira LIKE '%{esteira}'
+            """
+            cursor.execute(query)
+            row = cursor.fetchone()
+            if row is None:
+                QMessageBox.critical(popup, "Erro", "Essa combinação de tarefa e esteira não existe")
+                return
+                
+            id_t = row[0]
+            
+            query = """
+                SELECT 1
+                FROM liq.CHECKLIST_EXECUCAO
+                WHERE id_tarefa = ?
+                AND data = ?
+            """
+            cursor.execute(query, (id_t, config.HOJE))
+            
+            if cursor.fetchone():
+                QMessageBox.information(popup, "Informação", "Este evento já foi inserido para hoje.")
+                return
+                
+            try:
+                query = f"""
+                    INSERT INTO liq.CHECKLIST_EXECUCAO (id_tarefa, data, responsavel)
+                    VALUES ({id_t}, '{config.HOJE}', '{os.getlogin().upper()}')
+                """
+                cursor.execute(query)
+                conn.commit()
+                
+                QMessageBox.information(popup, "Sucesso", "Evento especial adicionado com sucesso!")
+                
+            except Exception as e:
+                QMessageBox.critical(popup, "Erro", f"Erro ao adicionar evento: {e}")
+
+        def remover_evento():
+            tarefa = tarefa_menu.currentText()
+            esteira = esteira_menu.currentText()
+
+            conn = self.db_manager.conn
+            cursor = conn.cursor()
+            
+            query = f"""
+                SELECT id
+                FROM liq.CHECKLIST_TAREFAS
+                WHERE tarefa = '{tarefa}'
+                AND esteira LIKE '%{esteira}'
+            """
+            cursor.execute(query)
+            row = cursor.fetchone()
+            
+            if row is None:
+                QMessageBox.critical(popup, "Erro", "Tarefa especial não encontrada no banco.")
+                return
+                
+            id_t = row[0]
+            
+            query = """
+                SELECT 1
+                FROM liq.CHECKLIST_EXECUCAO
+                WHERE id_tarefa = ?
+                AND data = ?
+            """
+            cursor.execute(query, (id_t, config.HOJE))
+            
+            if not cursor.fetchone():
+                QMessageBox.information(popup, "Informação", "Este evento não foi inserido hoje.")
+                return
+            
+            # Caixa de diálogo de confirmação do PySide6
+            resp = QMessageBox.question(
+                popup, 
+                "Confirmar exclusão",
+                f"Tem certeza de que deseja remover o evento da tarefa:\n"
+                f"- Tarefa: {tarefa}\n"
+                f"- Esteira: {esteira}",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            
+            if resp != QMessageBox.StandardButton.Yes:
+                return
+                
+            try:
+                query = f"""
+                    DELETE FROM liq.CHECKLIST_EXECUCAO
+                    WHERE id_tarefa = {id_t}
+                    AND data = '{config.HOJE}'
+                """
+                cursor.execute(query)
+                conn.commit()
+                
+                QMessageBox.information(popup, "Sucesso", "Evento especial removido com sucesso!")
+                
+            except Exception as e:
+                QMessageBox.critical(popup, "Erro", f"Erro ao remover evento: {e}")
+
+        adicionar_btn.clicked.connect(adicionar_evento)
+        remover_btn.clicked.connect(remover_evento)
+
+        popup.exec()
+    def revisar_status(self):
+        return
+        conn = self.db_manager.conn
+        cursor = conn.cursor()
+
+        query = f"""
+            UPDATE e
+            SET
+                e.status = 'Em atraso',
+                e.data_atualizacao = SYSDATETIME()
+            FROM liq.CHECKLIST_EXECUCAO AS e
+            JOIN liq.CHECKLIST_TAREFAS AS t ON t.id = e.id_tarefa
+            WHERE e.data = '{config.HOJE}'
+            AND ISNULL(e.status, 'Pendente') = 'Pendente'
+            AND SYSDATETIME() >
+                DATEADD(
+                    SECOND,
+                    DATEDIFF(SECOND, '00:00:00', t.horario_conclusao),
+                    CAST(e.[data] AS DATETIME2(0))
+                );
+        """
+        cursor.execute(query)
+        self.db_manager.conn.commit()
+    def _formatar_data_atualizacao(self, valor):
+        if not valor:
+             return ""
+        
+        if isinstance(valor, (datetime, date)):
+            return valor.strftime('%d-%m-%Y %H:%M')
+            
+        # Converte para string
+        s = str(valor).strip()
+        if not s:
+            return ""
+        
+        # Tenta converter usando lib
+        try:
+            dt = datetime.fromisoformat(s)
+            return dt.strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            pass
+
+        # remove microssegundos se houver
+        if '.' in s:
+            s = s.split('.', 1)[0]
+
+        # Tenta formatos comuns
+        formatos = (
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M"
+        )
+        for fmt in formatos:
+            try:
+                dt = datetime.strptime(s, fmt)
+                return dt.strftime("%Y-%m-%d %H:%M")
+            except ValueError:
+                continue
+
+        return s    
+    def _fechar_editor_atual(self, salvar=True):
+        """
+        Fecha o editor atual (se houver). Se salvar=True, grava as alterações na Treeview e no banco.
+        """
+        if not self._cell_editor:
+            return
+        
+        editor = self._cell_editor
+        info = self._cell_editor_info
+
+        # Zera antes para prevenir reentrância em binds que disparam novamente
+        self._cell_editor = None
+        self._cell_editor_info = None
+
+        try:
+            if salvar and editor.winfo_exists():
+                widget = info["widget"]
+                row_id = info["row_id"]
+                col_index = info["col_index"]
+
+                valores = list(widget.item(row_id, "values"))
+                novo_valor = editor.get()
+                valores[col_index] = novo_valor
+                widget.item(row_id, values=valores)
+
+                id_tarefa = int(valores[0])
+                data_evento = valores[2]
+
+                if col_index == 3:
+                    self.atualizar_status_no_banco(id_tarefa, data_evento, novo_valor)
+                elif col_index == 5:
+                    self.atualizar_observacoes_no_banco(id_tarefa, data_evento, novo_valor)
+        finally:
+            if editor.winfo_exists():
+                editor.destroy()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPlainTextEdit, QFileDialog)
+from PySide6.QtGui import QFont
+from config import create_button, create_header, GenericWorker, MESES, HOJE
+
+
+
+class Cambio(QWidget):
+    def __init__(self, parent=None, db_manager=None):
+        super().__init__(parent)
+        self.db_manager = db_manager
         
         self.create_widgets()
     def create_widgets(self):
-        # CABEÇALHO
-        header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        header_frame.pack(fill="x", pady=(20, 10))
+        # Layout principal da tela (Vertical)
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        
+        header_layout, linha_layout = create_header("Câmbio")
+        self.main_layout.addLayout(header_layout)
+        self.main_layout.addLayout(linha_layout)
 
-        # Logo
-        logo_img = ctk.CTkImage(light_image=Image.open("intern/logo_itau.png"), size=(80, 80))
-        logo_label = ctk.CTkLabel(header_frame, image=logo_img, text="")
-        logo_label.pack(side="left", padx=20)
+        # ================= CONTEÚDO PRINCIPAL =================
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(20, 0, 20, 20)
 
-        # Título
-        title_label = ctk.CTkLabel(header_frame, text="E-mails Corretoras", font=("Arial", 24, "bold"))
-        title_label.pack(side="left", padx=10)
+        # Layout para os botões
+        button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 20, 0, 20)
 
-        # Linha divisória
-        linha_divisoria = ctk.CTkFrame(self, height=2, fg_color="black")
-        linha_divisoria.pack(fill="x", padx=20, pady=10)
+        # Botão 1: Importar Câmbio
+        self.btn_importar = create_button(text="Importar Câmbio", width=140, height=40)
+        self.btn_importar.clicked.connect(self.run)
 
-        # CONTEÚDO PRINCIPAL
-        main_frame = ctk.CTkFrame(self, fg_color="transparent")
-        main_frame.pack(fill="both", expand=True, padx=20)
+        # CENTRALIZA OS BOTÕES
+        button_layout.addStretch()
+        button_layout.addWidget(self.btn_importar)
+        button_layout.addStretch()
 
-        # Botão centralizado
-        button_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        button_frame.pack(pady=(20, 20))
+        content_layout.addLayout(button_layout)
 
-        self.emails_button = ctk.CTkButton(button_frame, text="Gerar emails", command=self._run, width=140, fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
-        self.emails_button.grid(row=0, column=0, sticky="w", padx=10)
+        # Log
+        self.log_label = QLabel("Log:")
+        self.log_label.setFont(QFont("Arial", 12))
+        content_layout.addWidget(self.log_label)
 
-        self.gerenciar_button = ctk.CTkButton(button_frame, text="Gerenciar cadastros", command=self._gerenciar, width=140, fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
-        self.gerenciar_button.grid(row=0, column=1, sticky="w", padx=10)
+        # QPlainTextEdit
+        self.log_text = QPlainTextEdit()
+        self.log_text.setFont(QFont("Arial", 12))
+        self.log_text.setReadOnly(True)
+        content_layout.addWidget(self.log_text)
 
-        # Log Frame
-        log_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        log_frame.pack(fill="both", expand=True)
+        self.main_layout.addLayout(content_layout)
 
-        ctk.CTkLabel(log_frame, text="Log de processos:", font=("Arial", 12)).pack(anchor="w", pady=(0, 5))
-        log_text = ctk.CTkTextbox(log_frame, font=("Arial", 12))
-        log_text.pack(fill="both", expand=True)
 
-        # Logger
-        self.logger = Logger()
-        self.logger.register_log_widget(log_text, after_owner=self, interval_ms=100)
-        self.logger.start_pumping()
-    def _run(self):
-        return
-    def _gerenciar(self):
-        if not hasattr(self, "janela_gerenciador") or not self.janela_gerenciador.winfo_exists():
-            self.janela_gerenciador = GerenciadorEmails(self, self.db_manager)
+
+    def run(self):
+        initial_dir = r"C:\YMF\CAMBIO"
+        arquivo, _ = QFileDialog.getOpenFileName(self, "Selecione o arquivo de Câmbio", initial_dir, "Arquivos Excel (*.xls *.xlsx)")
+
+        if not arquivo:
+            self.update_log("Nenhum arquivo selecionado.\n")
+            return
+
+        self.toggle_ui(False)
+        self.update_log("=== INICIANDO IMPORTAÇÃO ===")
+        self.update_log(f"Lendo arquivo: {arquivo}")
+        
+        mes = MESES[HOJE.month]
+        ano = str(HOJE.year)
+
+        try:
+        
+            dfDados = pd.read_excel(f"C:\YMF\CAMBIO\Cambio {mes} {ano[-2:]}.xls")
+            dfDados["DataContratacao"] = pd.to_datetime(dfDados["DataContratacao"],format='%d/%m/%Y')
+            agrupar = ['DataContratacao','Moeda','ValorContratoME','CodigoCliente']
+            df = dfDados.groupby(by=agrupar, as_index = False).agg({'TipoContrato':'unique','ValorTaxaME':'unique','CodigoContrato':'unique'})
+            df["TipoContratoLen"] = df.TipoContrato.apply(lambda x: len(x))
+            df["ValorTaxaMELen"] = df.ValorTaxaME.apply(lambda x: len(x))
+            df = df.query("TipoContratoLen > 1 and ValorTaxaMELen > 1")
+            caminho_resultado = f"C:/YMF/CAMBIO/Resultado {mes} {ano}.xlsx"
+            df.to_excel(caminho_resultado, index=False)
+
+            self.update_log("-> Importação concluída com sucesso!")
+            self.update_log(f"-> Resultado salvo em: {caminho_resultado}\n")
+        
+        except Exception as e:
+            self.update_log(f"-> ERRO: {str(e)}\n")
+        
+        finally:
+            self.toggle_ui(True)
+
+
+
+    def toggle_ui(self, flag):
+        """Habilita/Desabilita botões"""
+        if flag:
+            self.btn_importar.setEnabled(True)
         else:
-            self.janela_gerenciador.focus()
+            self.btn_importar.setEnabled(False)
+    def update_log(self, message):
+        """Adiciona texto no log"""
+        self.log_text.appendPlainText(message)
 
 
-class GerenciadorEmails(ctk.CTkToplevel):
-    def __init__(self, master, db_manager):
-        super().__init__(master)
-        self.title("Gerenciar Emails de Corretoras")
-        self.geometry("600x450")
-        self.transient(master)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import os
+from PySide6.QtWidgets import (
+    QFrame, QLabel, QVBoxLayout, QHBoxLayout, QGridLayout, 
+    QComboBox, QLineEdit, QPushButton, QTextEdit, QTableWidget, 
+    QTableWidgetItem, QHeaderView, QAbstractItemView, QWidget
+)
+from PySide6.QtGui import QIcon, QPixmap, QFont, QRegularExpressionValidator
+from PySide6.QtCore import Qt, QSize, QRegularExpression
+
+import config
+from logger import Logger
+
+class CadastroEventosView(QFrame):
+    def __init__(self, parent=None, db_manager=None):
+        """
+        Inicializa a view de cadastro de eventos no PySide6.
+        """
+        super().__init__(parent)
         
         self.db_manager = db_manager
-
-        # --- Estilização do Treeview ---
-        style = ttk.Style(self)
-        style.theme_use("default")
-        style.configure("Treeview", 
-                        background="#2b2b2b", 
-                        foreground="white", 
-                        rowheight=25, 
-                        fieldbackground="#2b2b2b", 
-                        borderwidth=0)
-        style.map('Treeview', background=[('selected', '#1f538d')])
-        style.configure("Treeview.Heading", 
-                        background="#1f538d", 
-                        foreground="white", 
-                        relief="flat",
-                        font=("Arial", 11, "bold"))
-        style.map("Treeview.Heading", background=[('active', '#14375e')])
-
-        # Layout: Treeview e Scrollbar
-        self.frame_lista = ctk.CTkFrame(self)
-        self.frame_lista.pack(fill="both", expand=True, padx=20, pady=(20, 10))
-
-        colunas = ("corretora", "email")
-        self.tree = ttk.Treeview(self.frame_lista, columns=colunas, show="headings", selectmode="browse")
-        self.tree.heading("corretora", text="Corretora", anchor="w")
-        self.tree.heading("email", text="Email", anchor="w")
-        self.tree.column("corretora", width=150)
-        self.tree.column("email", width=350)
-
-        scrollbar = ttk.Scrollbar(self.frame_lista, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set)
         
-        self.tree.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        # Layout: Botões Inferiores
-        self.frame_botoes = ctk.CTkFrame(self, fg_color="transparent")
-        self.frame_botoes.pack(fill="x", padx=20, pady=(0, 20))
-
-        self.btn_novo = ctk.CTkButton(self.frame_botoes, text="Inserir Novo", command=self.abrir_inserir)
-        self.btn_novo.pack(side="left", expand=True, padx=10)
-
-        self.btn_editar = ctk.CTkButton(self.frame_botoes, text="Editar Selecionado", command=self.abrir_editar)
-        self.btn_editar.pack(side="right", expand=True, padx=10)
-
-        # Carrega os dados ao iniciar a janela
-        self.carregar_dados()
-    def carregar_dados(self):
-        # Limpa o treeview atual para evitar duplicação visual
-        for item in self.tree.get_children():
-            self.tree.delete(item)
+        self._create_widgets()
+        self._apply_styles()
+        
+    def _create_widgets(self):
+            """Cria e organiza os elementos com Log mais largo e botões centralizados"""
             
-        try:
-            conn = self.db_manager.conn
-            cursor = conn.cursor()
-            cursor.execute("SELECT corretora, email FROM liq.EMAILS_CORRETORAS ORDER BY corretora ASC")
-            registros = cursor.fetchall()
+            # Layout principal
+            self.main_layout = QVBoxLayout(self)
+            self.main_layout.setContentsMargins(0, 0, 0, 0)
+            self.main_layout.setSpacing(0)
             
-            for row in registros:
-                self.tree.insert("", "end", values=(row[0], row[1]))
-        except Exception as e:
-            messagebox.showerror("Erro de Leitura", f"Não foi possível carregar os dados: {str(e)}")
-    def abrir_inserir(self):
-        FormularioEmail(self, self.db_manager, self.carregar_dados)
-    def abrir_editar(self):
-        item_selecionado = self.tree.selection()
-        if not item_selecionado:
-            messagebox.showwarning("Aviso", "Selecione uma linha na tabela para editar.")
-            return
+            # --- CABEÇALHO ---
+            self.header_frame = QFrame()
+            self.header_frame.setFixedHeight(60)
+            self.header_frame.setObjectName("HeaderFrame")
+            header_layout = QHBoxLayout(self.header_frame)
+            self.title_label = QLabel("Cadastro de Eventos")
+            self.title_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+            self.title_label.setObjectName("TitleLabel")
+            header_layout.addWidget(self.title_label)
+            self.main_layout.addWidget(self.header_frame)
+
+            # --- CONTAINER DE CONTEÚDO ---
+            content_container = QWidget()
+            content_layout = QHBoxLayout(content_container)
+            content_layout.setContentsMargins(20, 20, 20, 20)
+            content_layout.setSpacing(40) # Espaço generoso entre as colunas
+
+            # ================= COLUNA ESQUERDA (Inputs + Log) =================
+            # Aumentamos o stretch aqui para a caixa de log ficar mais larga
+            left_column = QVBoxLayout()
+            left_column.setSpacing(10)
+
+            # Layout dos Inputs
+            inputs_layout = QGridLayout()
+            inputs_layout.setContentsMargins(0, 0, 0, 0)
             
-        # Coleta os valores do item selecionado na Treeview
-        valores = self.tree.item(item_selecionado[0], "values")
-        corretora = valores[0]
-        email = valores[1]
+            inputs_layout.addWidget(QLabel("Produto:"), 0, 0)
+            self.produto_combo = QComboBox()
+            self.produto_combo.addItems(["Ações", "CRI", "Debêntures/Notas", "Fundos", "CETIP ANBIMA", "CETIP Notas"])
+            self.produto_combo.setFixedWidth(160)
+            inputs_layout.addWidget(self.produto_combo, 1, 0)
 
-        FormularioEmail(self, self.db_manager, self.carregar_dados, corretora_antiga=corretora, email_antigo=email)
+            inputs_layout.addWidget(QLabel("Nome:"), 0, 1)
+            self.nome_input = QLineEdit()
+            self.nome_input.setFixedWidth(160)
+            inputs_layout.addWidget(self.nome_input, 1, 1)
 
-class FormularioEmail(ctk.CTkToplevel):
-    def __init__(self, master, db_manager, refresh_callback, corretora_antiga=None, email_antigo=None):
-        super().__init__(master)
+            inputs_layout.addWidget(QLabel("Conta:"), 0, 2)
+            self.conta_input = QLineEdit()
+            self.conta_input.setFixedWidth(160)
+            inputs_layout.addWidget(self.conta_input, 1, 2)
+            
+            left_column.addLayout(inputs_layout)
+
+            # Log do processo
+            left_column.addWidget(QLabel("Log do processo:"))
+            self.log_text = QTextEdit()
+            self.log_text.setReadOnly(True)
+            # Definimos uma largura mínima maior para garantir que o log seja proeminente
+            self.log_text.setMinimumWidth(450) 
+            left_column.addWidget(self.log_text)
+
+            # Adicionamos ao layout principal com stretch 2 (mais largo)
+            content_layout.addLayout(left_column, stretch=2) 
+
+            # ================= COLUNA DIREITA (Botões + Tabela) =================
+            right_column = QVBoxLayout()
+            right_column.setSpacing(10)
+
+            # Botões Superiores - Centralizados horizontalmente
+            top_buttons_container = QHBoxLayout()
+            top_buttons_container.setContentsMargins(0, 15, 0, 0) # Alinha com os inputs
+            top_buttons_container.setAlignment(Qt.AlignmentFlag.AlignCenter) # CENTRALIZA os botões
+            top_buttons_container.setSpacing(15)
+            
+            self.btn_salvar = self._create_button("Salvar", "intern/icons/adicionar.png", self._salvar_dados)
+            self.btn_buscar = self._create_button("Buscar Contas", "intern/icons/lupa.png", self._extrair_dados)
+            self.btn_excel = self._create_button("Gerar Excel", "intern/icons/excel.png", self._gerar_excel)
+            
+            # Como o helper _create_button já define setFixedWidth(150), eles não vão esticar
+            top_buttons_container.addWidget(self.btn_salvar)
+            top_buttons_container.addWidget(self.btn_buscar)
+            top_buttons_container.addWidget(self.btn_excel)
+            
+            right_column.addLayout(top_buttons_container)
+
+            # Tabela
+            right_column.addWidget(QLabel("Contas inseridas hoje:"))
+            self.table = QTableWidget(0, 4)
+            self.table.setHorizontalHeaderLabels(["Produto", "Nome", "Conta", "Data"])
+            self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+            self.table.verticalHeader().setVisible(False)
+            right_column.addWidget(self.table)
+
+            # Botões Inferiores - Também centralizados
+            bottom_buttons_layout = QHBoxLayout()
+            bottom_buttons_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.btn_consultar = self._create_button("Consultar", "intern/icons/consultar.png", self._consultar_contas)
+            self.btn_alterar = self._create_button("Alterar", "intern/icons/alterar.png", self._alterar_dados)
+            bottom_buttons_layout.addWidget(self.btn_consultar)
+            bottom_buttons_layout.addWidget(self.btn_alterar)
+            
+            right_column.addLayout(bottom_buttons_layout)
+
+            # Adicionamos ao layout principal com stretch 3 (tabela ainda é larga, mas proporcional ao log)
+            content_layout.addLayout(right_column, stretch=3)
+
+            self.main_layout.addWidget(content_container)
+
+    def _create_button(self, text, icon_path, command):
+        """Helper para criar botões com tamanho fixo e texto centralizado"""
+        btn = QPushButton(text)
+        if os.path.exists(icon_path):
+            btn.setIcon(QIcon(icon_path))
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
         
-        # Define se é modo Edição ou Inserção
-        self.is_edicao = (corretora_antiga is not None and email_antigo is not None)
-        titulo = "Editar Email" if self.is_edicao else "Inserir Novo Email"
+        # Mantendo a largura original conforme solicitado
+        btn.setFixedWidth(150) 
+        btn.setFixedHeight(35)
         
-        self.title(titulo)
-        self.geometry("400x250")
-        self.transient(master) # Mantém a janela sempre à frente do gerenciador
-        self.grab_set() # Foca os eventos do mouse e teclado apenas nesta janela
+        btn.clicked.connect(command)
+        return btn
 
-        self.db_manager = db_manager
-        self.refresh_callback = refresh_callback
+
+    def _apply_styles(self):
+        """Aplica estilos CSS-like (QSS) para replicar o visual do CustomTkinter"""
         
-        self.corretora_antiga = corretora_antiga
-        self.email_antigo = email_antigo
+        # Recupera cores do config (caso existam) ou define valores hex padrão
+        COR_AZUL = getattr(config, 'AZUL', '#004B87')
+        COR_AZUL_HOVER = getattr(config, 'AZUL_HOVER', '#0065B3')
+        
+        style = f"""
+            /* Cabeçalho */
+            QFrame {{
+                background-color: transparent;
+            }}
+            
+            /* Background do container de cima */
+            QFrame#HeaderFrame {{
+                background-color: {COR_AZUL};
+            }}
+            QLabel {{
+                font-family: Arial;
+                font-size: 13px;
+                color: #333333;
+            }}
+            
+            /* Título do cabeçalho */
+            QLabel#TitleLabel {{
+                color: white;
+            }}
+            
+            /* Entradas de Texto e Combobox */
+            QLineEdit, QComboBox {{
+                border: 2px solid {COR_AZUL};
+                border-radius: 5px;
+                padding: 5px;
+                background-color: white;
+                font-family: Arial;
+                font-size: 13px;
+                min-height: 20px;
+            }}
+            QLineEdit:focus, QComboBox:focus {{
+                border: 2px solid {COR_AZUL_HOVER};
+            }}
+            QComboBox::drop-down {{
+                border-left: 1px solid {COR_AZUL};
+            }}
+            
+            /* Botões */
+            QPushButton {{
+                background-color: {COR_AZUL};
+                color: white;
+                border: none;
+                border-radius: 5px;
+                font-family: Arial;
+                font-size: 13px;
+                font-weight: bold;
+                padding: 5px;
+            }}
+            QPushButton:hover {{
+                background-color: {COR_AZUL_HOVER};
+            }}
+            
+            /* Log Textbox */
+            QTextEdit {{
+                border: 2px solid black;
+                border-radius: 10px;
+                background-color: white;
+                font-family: Arial;
+                font-size: 12px;
+                padding: 10px;
+            }}
+            
+            /* Tabela (Substituta da Treeview) */
+            QTableWidget {{
+                background-color: white;
+                border: 1px solid #CCCCCC;
+                border-radius: 5px;
+                gridline-color: #E0E0E0;
+            }}
+            QHeaderView::section {{
+                background-color: {COR_AZUL};
+                color: white;
+                font-family: Arial;
+                font-size: 13px;
+                font-weight: bold;
+                padding: 5px;
+                border: none;
+            }}
+            QTableWidget::item:selected {{
+                background-color: {COR_AZUL_HOVER};
+                color: white;
+            }}
+            /* Estilo Geral de Botões - Garante texto centralizado */
+            QPushButton {{
+                background-color: {COR_AZUL};
+                color: white;
+                border: none;
+                border-radius: 5px;
+                font-family: Arial;
+                font-size: 13px;
+                font-weight: bold;
+                text-align: center; /* Garante o centro */
+                padding-left: 10px;
+                padding-right: 10px;
+            }}
+        """
+        
+        # Aplica IDs específicos para as regras de CSS funcionarem
+        self.header_frame.setObjectName("HeaderFrame")
+        self.title_label.setObjectName("TitleLabel")
+        
+        self.setStyleSheet(style)
 
-        # Layout: Entradas
-        self.lbl_corretora = ctk.CTkLabel(self, text="Corretora:", font=("Arial", 14, "bold"))
-        self.lbl_corretora.pack(pady=(20, 0), padx=20, anchor="w")
-        self.entry_corretora = ctk.CTkEntry(self, width=360)
-        self.entry_corretora.pack(pady=(0, 10), padx=20)
+    # ----------- FUNÇÕES DE LÓGICA ----------- #
+    
+    def _salvar_dados(self):
+        # Como pegar os valores no PySide:
+        produto = self.produto_combo.currentText()
+        nome = self.nome_input.text()
+        conta = self.conta_input.text()
+        print(f"Salvando: {produto}, {nome}, {conta}")
 
-        self.lbl_email = ctk.CTkLabel(self, text="Email:", font=("Arial", 14, "bold"))
-        self.lbl_email.pack(pady=(10, 0), padx=20, anchor="w")
-        self.entry_email = ctk.CTkEntry(self, width=360)
-        self.entry_email.pack(pady=(0, 20), padx=20)
-
-        # Frame para os botões
-        self.frame_botoes = ctk.CTkFrame(self, fg_color="transparent")
-        self.frame_botoes.pack(fill="x", padx=20)
-
-        if self.is_edicao:
-            # Preenche os campos
-            self.entry_corretora.insert(0, self.corretora_antiga)
-            self.entry_email.insert(0, self.email_antigo)
-
-            # Botões Editar e Excluir
-            self.btn_salvar = ctk.CTkButton(self.frame_botoes, text="Editar", command=self.editar_registro, fg_color="#2FA572", hover_color="#106A43")
-            self.btn_salvar.pack(side="left", expand=True, padx=5)
-
-            self.btn_excluir = ctk.CTkButton(self.frame_botoes, text="Excluir", command=self.excluir_registro, fg_color="#C23B22", hover_color="#8F2412")
-            self.btn_excluir.pack(side="right", expand=True, padx=5)
-        else:
-            # Botão Inserir
-            self.btn_inserir = ctk.CTkButton(self.frame_botoes, text="Inserir", command=self.inserir_registro)
-            self.btn_inserir.pack(expand=True, fill="x", padx=5)
-
-    def inserir_registro(self):
-        corretora = self.entry_corretora.get().strip()
-        email = self.entry_email.get().strip()
-
-        if not corretora or not email:
-            messagebox.showwarning("Aviso", "Preencha todos os campos!")
-            return
-
-        try:
-            conn = self.db_manager.conn
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO liq.EMAILS_CORRETORAS (corretora, email) 
-                VALUES (?, ?)
-            """, (corretora, email))
-            conn.commit()
-            self.refresh_callback()
-            self.destroy()
-        # except sqlite3.IntegrityError: # NO PROJETO REAL MUDE PARA: except pyodbc.IntegrityError:
-        #     messagebox.showerror("Erro", "Essa combinação de corretora e email já existe no banco de dados!")
-        except Exception as e:
-            messagebox.showerror("Erro BD", f"Ocorreu um erro ao inserir: {str(e)}")
-
-    def editar_registro(self):
-        corretora_nova = self.entry_corretora.get().strip()
-        email_novo = self.entry_email.get().strip()
-
-        if not corretora_nova or not email_novo:
-            messagebox.showwarning("Aviso", "Preencha todos os campos!")
-            return
-
-        try:
-            conn = self.db_manager.conn
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE liq.EMAILS_CORRETORAS 
-                SET corretora = ?, email = ? 
-                WHERE corretora = ? AND email = ?
-            """, (corretora_nova, email_novo, self.corretora_antiga, self.email_antigo))
-            conn.commit()
-            self.refresh_callback()
-            self.destroy()
-        # except sqlite3.IntegrityError: # NO PROJETO REAL MUDE PARA: except pyodbc.IntegrityError:
-        #      messagebox.showerror("Erro", "Essa combinação já existe em outra tupla do banco de dados!")
-        except Exception as e:
-            messagebox.showerror("Erro BD", f"Ocorreu um erro ao atualizar: {str(e)}")
-
-    def excluir_registro(self):
-        resposta = messagebox.askyesno("Confirmar", "Tem certeza que deseja excluir esta associação?")
-        if resposta:
-            try:
-                conn = self.db_manager.conn
-                cursor = conn.cursor()
-                cursor.execute("""
-                    DELETE FROM liq.EMAILS_CORRETORAS 
-                    WHERE corretora = ? AND email = ?
-                """, (self.corretora_antiga, self.email_antigo))
-                conn.commit()
-                self.refresh_callback()
-                self.destroy()
-            except Exception as e:
-                messagebox.showerror("Erro BD", f"Ocorreu um erro ao excluir: {str(e)}")
-
-
-=======================================================================
-
-
-
-
-def tem_anexo_excel(item):
-    try:
-        anexos = item.Attachments
-        if anexos.Count == 0: return False
-
-        for i in range(1, anexos.Count + 1):
-            nome = anexos.Item(i).FileName.lower()
-            if nome.endswith((".xlsx", ".xls", ".xlsm", ".csv")): return True
-
-    except Exception:
+    def _extrair_dados(self):
         pass
 
-    return False
+    def _gerar_excel(self):
+        pass
 
-def buscar_email(pasta, assunto1, assunto2):
-    email1 = None
-    email2 = None
+    def _consultar_contas(self):
+        pass
 
-    try:
-        filtro = (f'@SQL=("urn:schemas:httpmail:subject" = \'{assunto1}\' '
-                  f'OR "urn:schemas:httpmail:subject" = \'{assunto2}\')')
+    def _alterar_dados(self):
+        pass
 
-        itens = pasta.Items.Restrict(filtro)
-        itens.Sort("[ReceivedTime]", True)
-
-        for item in itens:
-            if item.Class != 43: continue
-            if not tem_anexo_excel(item): continue
-
-            assunto_email = item.Subject
-            if assunto_email == assunto1 and email1 is None: email1 = item
-            elif assunto_email == assunto2 and email2 is None: email2 = item
-
-            if email1 and email2: return email1, email2
-
-    except Exception as e:
-        print(f"Erro na pasta {pasta.Name}: {e}")
-
-    try:
-        for subpasta in pasta.Folders:
-            sub_email1, sub_email2 = buscar_email(subpasta, assunto1, assunto2)
-    
-            if sub_email1 and not email1: email1 = sub_email1
-            if sub_email2 and not email2: email2 = sub_email2
-            if email1 and email2: return email1, email2
-
-    except Exception as e:
-        print(f"Erro subpastas {pasta.Name}: {e}")
-
-    return email1, email2
-
-assunto1 = "X"
-assunto2 = "Y"
-outlook = win32.Dispatch("Outlook.Application").GetNamespace("MAPI")
-email1 = None
-email2 = None
-
-
-for pasta in outlook.Folders:
-    email1, email2 = buscar_email(pasta, assunto1, assunto2)
-    if email1 and email2: break
-
-if not email1:
-    self.logger.log("Não foi possível encontrar um e-mail da 2028 com anexo.")
-
-if email2:
-    self.logger.log("Não foi possível encontrar um e-mail da 4440 com anexo.")
-
-temp_paths = []
-dfs = []
-
-for idx, email in enumerate([email1, email2]):
-    if email is not None:
-        anexo = email.Attachments(1)
-        temp_path = os.path.join(os.environ['TEMP'], anexo.FileName)
-        anexo.SaveAsFile(temp_path)
-        temp_paths.append(temp_path)
-
-        df_temp = pd.read_excel(temp_path)
-        dfs.append(df_temp)
-        
-df_concat = pd.concat(dfs, ignore_index=True)
