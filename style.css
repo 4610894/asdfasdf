@@ -1,0 +1,189 @@
+/* Variáveis de Cor */
+:root {
+    --bg-dark: #f0f2f5;
+    --bg-panel: #ffffff;
+    --banco-azul: #312783;
+    --banco-azul-hover: #0B215C;
+    --banco-laranja: #EC7000;
+    --text-main: #334155;
+    --text-light: #64748b;
+    --border: #e2e8f0;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Inter', sans-serif;
+}
+
+body {
+    background-color: var(--bg-dark);
+    color: var(--text-main);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ================= Top Navigation ================= */
+.top-nav {
+    height: 60px;
+    background-color: var(--banco-azul);
+    color: white;
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    z-index: 10;
+}
+
+.brand { font-size: 1.2rem; font-weight: 700; display: flex; align-items: center; gap: 12px; width: 260px; }
+.top-menu { flex: 1; display: flex; gap: 8px; padding-left: 24px; }
+.btn-top { background: transparent; border: none; color: rgba(255, 255, 255, 0.7); font-size: 0.95rem; font-weight: 500; padding: 8px 16px; border-radius: 6px; cursor: pointer; transition: all 0.2s; }
+.btn-top:hover, .btn-top.active { background-color: rgba(255, 255, 255, 0.1); color: white; }
+.system-date { font-size: 0.85rem; color: rgba(255, 255, 255, 0.8); font-weight: 500; }
+
+/* ================= Main Layout & Sidebar ================= */
+.main-layout { display: flex; flex: 1; height: calc(100vh - 60px); }
+
+.sidebar { width: 280px; background-color: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; box-shadow: 2px 0 10px rgba(0,0,0,0.02); }
+.sidebar-header { padding: 24px 20px; border-bottom: 1px solid var(--border); background-color: #f8fafc; }
+.area-badge { display: inline-block; background-color: #e2e8f0; color: var(--text-light); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; padding: 4px 8px; border-radius: 4px; margin-bottom: 8px; }
+.sidebar-header h3 { font-size: 1.1rem; color: var(--banco-azul); }
+.sidebar-content { flex: 1; overflow-y: auto; padding: 16px 12px; }
+.menu-list { display: flex; flex-direction: column; gap: 4px; }
+
+/* --- CSS Atualizado do Accordion (Menu Lateral) --- */
+.area-group { margin-bottom: 4px; }
+
+.area-title { 
+    font-size: 0.85rem; 
+    font-weight: 700; 
+    color: var(--text-main); 
+    text-transform: uppercase; 
+    padding: 10px 12px; 
+    margin-top: 4px; 
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-radius: 6px;
+    transition: background-color 0.2s;
+}
+
+.area-title:hover { background-color: #e2e8f0; }
+.area-title .toggle-icon { font-size: 0.75rem; color: var(--text-light); transition: transform 0.3s ease; }
+
+.area-tabs {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-left: 10px; /* Recuo visual (indentação) das funcionalidades */
+    margin-top: 4px;
+}
+/* ------------------------------------------------ */
+
+.btn-side { background: transparent; border: none; width: 100%; text-align: left; padding: 10px 12px; font-size: 0.95rem; color: var(--text-main); border-radius: 6px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 10px; }
+.btn-side i { color: var(--text-light); width: 16px; text-align: center; }
+.btn-side:hover { background-color: #f1f5f9; }
+.btn-side.active { background-color: #eff6ff; color: var(--banco-azul); font-weight: 600; }
+.btn-side.active i { color: var(--banco-azul); }
+
+.sidebar-footer { padding: 16px; border-top: 1px solid var(--border); }
+.btn-home { width: 100%; background-color: #f1f5f9; border: 1px solid var(--border); padding: 10px; border-radius: 6px; cursor: pointer; color: var(--text-main); font-weight: 600; transition: 0.2s; }
+.btn-home:hover { background-color: #e2e8f0; }
+
+/* ================= Content Area & Views ================= */
+.content-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.view-container { flex: 1; padding: 32px; overflow-y: auto; }
+.view { display: none; }
+.view.active-view { display: block; animation: fadeIn 0.3s ease-in-out; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* --- Welcome & Dev Views --- */
+.welcome-card { background: white; padding: 40px; border-radius: 12px; border: 1px solid var(--border); text-align: center; max-width: 800px; margin: 0 auto; margin-top: 40px; }
+.welcome-card h1 { color: var(--banco-azul); margin-bottom: 12px; }
+.welcome-card p { color: var(--text-light); margin-bottom: 32px; font-size: 1.1rem;}
+.features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.feat-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 24px 16px; border-radius: 8px; font-weight: 600; color: var(--banco-azul); }
+.feat-box i { display: block; font-size: 2rem; margin-bottom: 12px; color: #3b82f6;}
+.dev-card { text-align: center; padding: 60px 20px; color: var(--text-light); }
+.dev-icon { font-size: 4rem; color: #cbd5e1; margin-bottom: 20px;}
+
+/* ================= Padronização de Cabeçalho ================= */
+.view-header { margin-bottom: 16px; }
+.view-header-title { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+.itau-logo { width: 46px; height: 46px; object-fit: contain; border-radius: 6px; }
+.view-header-title h2 { font-size: 1.6rem; color: var(--banco-azul); font-weight: 700; }
+.view-divider { border: none; height: 2px; background-color: var(--banco-azul); opacity: 0.15; margin-bottom: 16px; }
+.view-description { color: var(--text-light); margin-bottom: 24px; font-size: 0.95rem; }
+
+/* ================= Botões Gerais e Controles ================= */
+.btn-primary { background-color: var(--banco-azul); color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+.btn-primary:hover { background-color: var(--banco-azul-hover); }
+.dashboard-controls { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; }
+
+/* ================= Formulário UI ================= */
+.form-container { max-width: 900px; margin: 0 auto; background: white; padding: 40px; border-radius: 12px; border: 1px solid var(--border); }
+.notice-box { background-color: #fdfae6; border: 2px solid #f1c40f; padding: 15px; border-radius: 6px; color: #333; margin-bottom: 30px; }
+.form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.form-group { margin-bottom: 20px; }
+.form-group label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 8px; color: var(--text-main); }
+.form-control { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.95rem; outline: none; transition: 0.2s; }
+.form-control:focus { border-color: var(--banco-azul); box-shadow: 0 0 0 3px rgba(49, 39, 131, 0.1); }
+.inline-radio { background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid var(--border); }
+.radio-options { display: flex; gap: 20px; margin-bottom: 10px; }
+.extra-input { margin-top: 10px; }
+.hidden { display: none !important; }
+.mb-2 { margin-bottom: 8px; }
+.btn-submit { width: 100%; background-color: var(--banco-azul); color: white; border: none; padding: 16px; border-radius: 8px; font-size: 1.1rem; font-weight: bold; cursor: pointer; margin-top: 20px; transition: 0.2s; }
+.btn-submit:hover { background-color: var(--banco-azul-hover); }
+
+/* ================= Dashboard e Tabelas ================= */
+.dash-actions { display: flex; gap: 10px; }
+.btn-tab { padding: 10px 16px; border: 1px solid var(--border); background: white; border-radius: 6px; cursor: pointer; font-weight: 600; color: var(--text-light);}
+.btn-tab.active { background: var(--banco-azul); color: white; border-color: var(--banco-azul); }
+
+.table-container { background: white; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.data-table { width: 100%; border-collapse: collapse; }
+.data-table th { background-color: #f1f5f9; color: var(--text-main); text-align: left; padding: 14px 16px; font-weight: 700; border-bottom: 2px solid var(--border); }
+.data-table td { padding: 14px 16px; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+.data-table tbody tr:hover { background-color: #f8fafc; }
+
+/* ================= Badges e Status ================= */
+.status-badge { padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; }
+.status-badge.ok { background-color: #dcfce7; color: #166534; }
+.status-badge.erro { background-color: #fee2e2; color: #991b1b; }
+.st-aberto { background-color: #fee2e2; color: #dc2626; }
+.st-analise { background-color: #fef3c7; color: #d97706; }
+.st-mitigado { background-color: #e0f2fe; color: #0284c7; }
+.st-fechado { background-color: #dcfce7; color: #16a34a; }
+.btn-acao { background: #2c3e50; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+.btn-acao:hover { background: #1a252f; }
+
+/* ================= Modal UI ================= */
+.modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; display: flex; justify-content: center; align-items: center; }
+.modal-box { background: white; width: 750px; max-height: 90vh; border-radius: 12px; display: flex; flex-direction: column; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+.modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.btn-close { background: none; border: none; font-size: 1.2rem; cursor: pointer; color: var(--text-light); }
+.modal-body { padding: 24px; overflow-y: auto; flex: 1; }
+.mod-section { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+.mod-sec-title { color: #3498db; font-size: 1.1rem; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; }
+.mod-row { display: flex; margin-bottom: 8px; font-size: 0.95rem; }
+.mod-lbl { font-weight: 700; width: 220px; color: #334155; }
+.mod-val { flex: 1; color: #475569; }
+.mod-val-long { margin-top: 4px; color: #475569; display: block;}
+.hist-item { background: white; border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 10px; }
+.hist-head { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-light); }
+
+/* ================= Logger Terminal ================= */
+.terminal-container { height: 180px; background-color: #1e293b; border-top: 4px solid var(--banco-azul); display: flex; flex-direction: column; transition: height 0.3s ease; }
+.terminal-container.collapsed { height: 35px; }
+.terminal-container.collapsed .terminal-body { display: none; }
+.terminal-header { padding: 8px 16px; background-color: #0f172a; color: #94a3b8; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: color 0.2s; }
+.terminal-header:hover { color: white; }
+.terminal-body { flex: 1; padding: 12px 16px; overflow-y: auto; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.85rem; color: #a7f3d0; }
+.log-line { margin-bottom: 4px; }
+.log-time { color: #64748b; margin-right: 8px; }
