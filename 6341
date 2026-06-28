@@ -1,1 +1,383 @@
+from PIL import Image
+import config
+import customtkinter as ctk
+from logger import Logger
+import os
+from datetime import datetime
+import pymupdf
+import re
+import pandas as pd
+import threading
 
+CAMINHO_REDE = r"X:\Caminho\Ficticio\Para\As\Corretoras"
+MESES = {1: "JANEIRO", 2: "FEVEREIRO", 3: "MARÇO", 4: "ABRIL",
+            5: "MAIO", 6: "JUNHO", 7: "JULHO", 8: "AGOSTO",
+            9: "SETEMBRO", 10: "OUTUBRO", 11: "NOVEMBRO", 12: "DEZEMBRO"}
+COLUNAS_CONTRATO = [
+    "Data",
+    "Instituição",
+    "CNPJ Instituição",
+    "Cliente",
+    "CNPJ Cliente",
+    "Tipo do Contrato",
+    "Número do Contrato",
+    "Cod Moeda Estrangeira",
+    "Valor Moeda Estrangeira",
+    "Taxa Cambial",
+    "Valor Moeda Nacional",
+    "Código da Natureza",
+    "Liquidação Até",
+    "Descrição da Natureza do Fato",
+    "Código da relação de vínculo",
+]
+
+CAMPOS_OBRIGATORIOS_SCOTIA = COLUNAS_CONTRATO
+CAMPOS_OBRIGATORIOS_GENERICO = [
+    "Data", "Instituição", "CNPJ Instituição", "Cliente", "CNPJ Cliente",
+    "Tipo do Contrato", "Número do Contrato", "Cod Moeda Estrangeira",
+    "Valor Moeda Estrangeira", "Taxa Cambial", "Valor Moeda Nacional",
+    "Código da Natureza", "Liquidação Até"
+]
+
+SENHA_SANTANDER = 'Y'
+
+class RelatoriosCambioview(ctk.CTkFrame):
+    def __init__(self, parent):
+        #def __init__(self, parent, db_manager):
+        super().__init__(parent, fg_color="transparent")
+
+        #self.db_manager = db_manager
+        
+        self.create_widgets()
+    def create_widgets(self):
+        # CABEÇALHO
+        header_frame = ctk.CTkFrame(self, fg_color="transparent")
+        header_frame.pack(fill="x", pady=(20, 10))
+
+        # Logo
+        logo_img = ctk.CTkImage(light_image=Image.open("intern/logo_itau.png"), size=(80, 80))
+        logo_label = ctk.CTkLabel(header_frame, image=logo_img, text="")
+        logo_label.pack(side="left", padx=20)
+
+        # Título
+        title_label = ctk.CTkLabel(header_frame, text="Relatórios Câmbio", font=("Arial", 24, "bold"))
+        title_label.pack(side="left", padx=10)
+
+        # Linha divisória
+        linha_divisoria = ctk.CTkFrame(self, height=2, fg_color="black")
+        linha_divisoria.pack(fill="x", padx=20, pady=10)
+
+        # CONTEÚDO PRINCIPAL
+        main_frame = ctk.CTkFrame(self, fg_color="transparent")
+        main_frame.pack(fill="both", expand=True, padx=20)
+
+        # Botão centralizado
+        button_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        button_frame.pack(pady=(20, 20))
+
+        # No seu create_widgets, altere o comando do botão:
+        self.emails_button = ctk.CTkButton(button_frame, text="Buscar Relatórios", command=lambda: threading.Thread(target=self._run, daemon=True).start(), width=140, fg_color=config.AZUL, hover_color=config.AZUL_HOVER)
+        self.emails_button.grid(row=0, column=0, sticky="w", padx=10)
+
+        # Log Frame
+        log_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        log_frame.pack(fill="both", expand=True)
+
+        ctk.CTkLabel(log_frame, text="Log de processos:", font=("Arial", 12)).pack(anchor="w", pady=(0, 5))
+        log_text = ctk.CTkTextbox(log_frame, font=("Arial", 12))
+        log_text.pack(fill="both", expand=True)
+
+        # Logger
+        self.logger = Logger()
+        self.logger.register_log_widget(log_text, after_owner=self, interval_ms=100)
+        self.logger.start_pumping()
+    
+    #---------- PROCESSO PRINCIPAL ----------#
+    def _run(self):
+        if not os.path.exists(CAMINHO_REDE):
+            print(f"ERRO: O caminho base '{CAMINHO_REDE}' não existe.")
+            return
+        
+        hoje = datetime.now()
+        ano_vigente = hoje.strftime("%Y")
+        mes_vigente = MESES[hoje.month]
+        prefixo_arquivo_hoje = hoje.strftime("%d-%m")
+
+        print(f"Buscando relatórios para a data: {prefixo_arquivo_hoje}-{ano_vigente}\n")
+        print("=" * 60)
+
+        dados_consolidados = []
+
+        for corretora in os.listdir(CAMINHO_REDE):
+            caminho_corretora = os.path.join(CAMINHO_REDE, corretora)
+            
+            if not os.path.isdir(caminho_corretora):
+                continue
+
+            caminho_mes_vigente = os.path.join(caminho_corretora, ano_vigente, mes_vigente)
+
+            if not os.path.exists(caminho_mes_vigente):
+                continue
+
+            for arquivo in os.listdir(caminho_mes_vigente):
+                if arquivo.startswith(prefixo_arquivo_hoje) and arquivo.lower().endswith(".pdf"):
+                    caminho_pdf = os.path.join(caminho_mes_vigente, arquivo)
+                    
+                    print(f"Processando arquivo: {arquivo}")
+
+                    senha_pdf = SENHA_SANTANDER if corretora.upper() == "SANTANDER" else None
+
+                    resultado = self._extrair_texto_pdf(caminho_pdf, senha_pdf)
+                    if not resultado["sucesso"]:
+                        print(f"Erro na extração: {resultado['erro']}\n")
+                        print("-" * 60)
+                        continue
+
+                    texto_normalizado = self._normalizar_texto(resultado["texto"])
+
+                    if corretora.upper() == "SCOTIABANK":
+                        contrato = self._contrato_scotiabank(texto_normalizado)
+                        validacao = self._validar_contrato(contrato, CAMPOS_OBRIGATORIOS_SCOTIA)
+                    else:
+                        contrato = self._contrato_generico(texto_normalizado)
+                        validacao = self._validar_contrato(contrato, CAMPOS_OBRIGATORIOS_GENERICO)
+
+                    if validacao['valido']:
+                        print("Validação: VÁLIDO")
+                    else:
+                        print("Validação: INVÁLIDO")
+                        for erro in validacao["erros"]:
+                            print(f" - {erro}")
+                    
+                    # Adicionando rastreabilidade ao dicionário
+                    contrato_com_metadados = {
+                        "Corretora Origem": corretora,
+                        "Arquivo": arquivo,
+                        "Status Validação": "Válido" if validacao['valido'] else "Inválido"
+                    }
+                    # Junta os dados do contrato com os metadados de rastreio
+                    contrato_com_metadados.update(contrato)
+                    
+                    dados_consolidados.append(contrato_com_metadados)
+                    print("-" * 60)
+        
+        if dados_consolidados:
+            df = pd.DataFrame(dados_consolidados)
+            
+            nome_arquivo_excel = f"extracao_cambio_{prefixo_arquivo_hoje}_{ano_vigente}.xlsx"
+            df.to_excel(nome_arquivo_excel, index=False)
+            
+            print(f"\n✅ Processamento concluído! Foram extraídos {len(dados_consolidados)} contratos.")
+            print(f"📄 Arquivo salvo como: {nome_arquivo_excel}")
+        else:
+            print("\nNenhum contrato foi extraído/encontrado para a data de hoje.")
+
+    def _extrair_texto_pdf(self, caminho_arquivo, senha=None):
+        try:
+            documento = pymupdf.open(caminho_arquivo)
+
+            if documento.is_encrypted:
+                if senha is not None:
+                    if not documento.authenticate(senha):
+                        return {"sucesso": False, "erro": "Senha incorreta para descriptografar o PDF."}
+                    else:
+                        return {"sucesso": False, "erro": "PDF protegido por senha, mas nenhuma senha foi fornecida."}
+        except FileNotFoundError as erro:
+            return {"sucesso": False, "erro": f"Arquivo não encontrado: {erro}"}
+        except Exception as erro:
+            return {"sucesso": False, "erro": f"Erro ao abrir PDF: {type(erro).__name__} - {erro}"}
+
+        try:
+            if documento.page_count == 0:
+                return {"sucesso": False, "erro": "PDF sem páginas"}
+
+            pagina = documento[0]
+            texto = pagina.get_text()
+
+            if not texto or texto.strip() == "":
+                return {"sucesso": False, "erro": "PDF sem texto (possivelmente escaneado)"}
+
+            return {"sucesso": True, "texto": texto}
+
+        except Exception as erro:
+            return {"sucesso": False, "erro": f"Erro ao extrair texto do PDF: {type(erro).__name__} - {erro}"}
+        finally:
+            if 'documento' in locals():
+                documento.close()
+    def _normalizar_texto(self, texto_bruto):
+        if texto_bruto is None:
+            return ""
+
+        linhas_normalizadas = []
+        for linha in texto_bruto.splitlines():
+            linha = " ".join(linha.split())
+            if linha:
+                linhas_normalizadas.append(linha)
+
+        return "\n".join(linhas_normalizadas)
+
+
+
+    #---------- CONTRATOS ----------#
+    def _contrato_scotiabank(self, texto):
+        contrato = self._criar_contrato_vazio()
+        texto_regex = self._limpar_texto_para_regex(texto)
+
+        cabeçalho = re.search(
+            r"Tipo de Contrato\n(.*?)\n.*Número do Contrato\n(.*?)\n.*Data\n(.*?)\n",
+            texto_regex,
+            re.IGNORECASE
+        )
+        if cabeçalho:
+            contrato["Tipo do Contrato"] = cabeçalho.group(1).strip()
+            contrato["Número do Contrato"] = cabeçalho.group(2).strip()
+            contrato["Data"] = cabeçalho.group(3).strip()
+
+        instituicao = re.search(
+            r"Instituição autorizada a operar no mercado de câmbio\nNome\n(.*?)\nCNPJ\n(.*?)\n",
+            texto_regex,
+            re.IGNORECASE
+        )
+        if instituicao:
+            contrato["Instituição"] = instituicao.group(1).strip()
+            contrato["CNPJ Instituição"] = instituicao.group(2).strip()
+
+        cliente = re.search(
+            r"Cliente\nNome\n(.*?)\nCNPJ/CPF/ident\. estrangeiro\n(.*?)\n",
+            texto_regex,
+            re.IGNORECASE
+        )
+        if cliente:
+            contrato["Cliente"] = cliente.group(1).strip()
+            contrato["CNPJ Cliente"] = cliente.group(2).strip()
+
+        dados_operacao = re.search(
+            r"Dados da Operação em moeda estrangeira\nTaxa cambial\nValor em moeda nacional\n"
+            r"([A-Z]{3})\n"
+            r"(.*?)\n"
+            r"(.*?)\n"
+            r"Código\n"
+            r"(.*?)\n",
+            texto_regex,
+            re.IGNORECASE
+        )
+        if dados_operacao:
+            contrato["Cod Moeda Estrangeira"] = dados_operacao.group(1).strip()
+            contrato["Valor Moeda Estrangeira"] = dados_operacao.group(2).strip()
+            contrato["Taxa Cambial"] = dados_operacao.group(3).strip()
+            contrato["Valor Moeda Nacional"] = dados_operacao.group(4).strip()
+
+        contrato["Liquidação Até"] = self._buscar_primeiro_padrao(
+            texto_regex, r"Liquidação Até\n(.*?)\n"
+        )
+
+        natureza = re.search(
+            r"Código\n.*?\nDescrição da natureza do fato\n"
+            r"(.*?)\n"
+            r"(.*?)\n",
+            texto_regex,
+            re.IGNORECASE
+        )
+        if natureza:
+            contrato["Código da Natureza"] = natureza.group(1).strip()
+            contrato["Descrição da Natureza do Fato"] = natureza.group(2).strip()
+
+        contrato["Código da relação de vínculo"] = self._buscar_primeiro_padrao(
+            texto_regex, r"Código da relação de vínculo entre o cliente e o pagador/recebedor no exterior\n(.*?)\n"
+        )
+
+        return contrato
+    def _contrato_generico(self, texto):
+        contrato = self._criar_contrato_vazio()
+        texto_regex = self._limpar_texto_para_regex(texto)
+
+        # 1. Cabeçalho
+        contrato["Tipo do Contrato"] = self._buscar_primeiro_padrao(texto_regex, r"Tipo d[ae] Operação\n(.*?)\n")
+        contrato["Número do Contrato"] = self._buscar_primeiro_padrao(texto_regex, r"Número d[ae] Operação.*?\n(.*?)\n")
+        contrato["Data"] = self._buscar_primeiro_padrao(texto_regex, r"Data\n(\d{2}/\d{2}/\d{4})")
+
+        # 2. Instituição
+        instituicao = re.search(
+            r"Instituição autorizada.*?\nNome\n(.*?)\n.*?CNPJ\n(.*?)\n",
+            texto_regex,
+            re.IGNORECASE | re.DOTALL
+        )
+        if instituicao:
+            contrato["Instituição"] = instituicao.group(1).strip()
+            contrato["CNPJ Instituição"] = instituicao.group(2).strip()
+
+        # 3. Cliente
+        cliente = re.search(
+            r"Cliente\nNome\n(.*?)\n.*?(?:CPF/CNPJ/Ident do Estrangeiro|CNPJ/CPF/ident\. estrangeiro)\n(.*?)\n",
+            texto_regex,
+            re.IGNORECASE | re.DOTALL
+        )
+        if cliente:
+            contrato["Cliente"] = cliente.group(1).strip()
+            contrato["CNPJ Cliente"] = cliente.group(2).strip()
+
+        # 4. Dados da Operação ([\d\.,]+ extrai apenas os números mantendo a formatação original em string)
+        contrato["Cod Moeda Estrangeira"] = self._buscar_primeiro_padrao(texto_regex, r"Cod da ME\n(.*?)\n")
+        
+        valor_me = self._buscar_primeiro_padrao(texto_regex, r"Valor em Moeda Estrangeira\n([\d\.,]+)")
+        if valor_me:
+            contrato["Valor Moeda Estrangeira"] = valor_me
+            
+        contrato["Taxa Cambial"] = self._buscar_primeiro_padrao(texto_regex, r"Taxa Cambial\n([\d\.,]+)")
+        
+        valor_mn = self._buscar_primeiro_padrao(texto_regex, r"Valor em Moeda Nacional\n(?:R\$\s*)?([\d\.,]+)")
+        if valor_mn:
+            contrato["Valor Moeda Nacional"] = valor_mn
+
+        # 5. Liquidação e Finalidade
+        contrato["Liquidação Até"] = self._buscar_primeiro_padrao(texto_regex, r"Liquidação at[ée]\n(\d{2}/\d{2}/\d{4})")
+        contrato["Código da Natureza"] = self._buscar_primeiro_padrao(texto_regex, r"Código da Finalidade\n(.*?)\n")
+
+        return contrato
+
+
+
+    #---------- AUXILIARES DE CONTRATO ----------#
+    def _criar_contrato_vazio(self):
+        contrato = {}
+        for coluna in COLUNAS_CONTRATO:
+            contrato[coluna] = ""
+        return contrato
+    def _limpar_texto_para_regex(self, texto):
+        if texto is None:
+            return ""
+        return "\n".join(texto.split())
+    def _buscar_primeiro_padrao(self, texto, padrao):
+        resultado = re.search(padrao, texto, re.IGNORECASE)
+        if resultado:
+            return resultado.group(1).strip()
+        return ""
+    def _validar_campos_obrigatorios(self, contrato, campos_obrigatorios):
+        erros = []
+        
+        if not isinstance(contrato, dict):
+            return {
+                "valido": False,
+                "erros": ["Contrato inválido: esperado dicionário"]
+            }
+
+        for campo in campos_obrigatorios:
+            if campo not in contrato:
+                erros.append(f"Campo obrigatório ausente: {campo}")
+                continue
+
+            if self._campo_esta_vazio(contrato[campo]):
+                erros.append(f"Campo obrigatório vazio: {campo}")
+
+        return {
+            "valido": len(erros) == 0,
+            "erros": erros
+        }
+    def _validar_contrato(self, contrato, campos_obrigatorios):
+        return self._validar_campos_obrigatorios(contrato, campos_obrigatorios)
+    def _campo_esta_vazio(self, valor):
+        if valor is None:
+            return True
+        if isinstance(valor, str) and valor.strip() == "":
+            return True
+        return False
