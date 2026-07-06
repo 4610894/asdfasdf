@@ -1,151 +1,4 @@
-def create_widgets(self):
-        # CABEÇALHO
-        header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        header_frame.pack(fill="x", pady=(20, 10))
-
-        # Logo
-        logo_img = ctk.CTkImage(light_image=Image.open("intern/logo_itau.png"), size=(80, 80))
-        logo_label = ctk.CTkLabel(header_frame, image=logo_img, text="")
-        logo_label.pack(side="left", padx=20)
-
-        # Título
-        title_label = ctk.CTkLabel(header_frame, text="Relatórios Câmbio", font=("Arial", 24, "bold"))
-        title_label.pack(side="left", padx=10)
-
-        # Linha divisória
-        linha_divisoria = ctk.CTkFrame(self, height=2, fg_color="black")
-        linha_divisoria.pack(fill="x", padx=20, pady=10)
-
-        # CONTEÚDO PRINCIPAL
-        main_frame = ctk.CTkFrame(self, fg_color="transparent")
-        main_frame.pack(fill="both", expand=True, padx=20)
-
-        # Botão e Input centralizados
-        button_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        button_frame.pack(pady=(20, 20))
-
-        # Novo campo para inserção da data
-        self.data_entry = ctk.CTkEntry(button_frame, placeholder_text="Data (DD/MM/AAAA) ou vazio", width=190)
-        self.data_entry.grid(row=0, column=0, padx=10)
-
-        self.emails_button = ctk.CTkButton(
-            button_frame, 
-            text="Buscar Relatórios", 
-            command=lambda: threading.Thread(target=self._run, daemon=True).start(), 
-            width=140, 
-            fg_color=config.AZUL, 
-            hover_color=config.AZUL_HOVER
-        )
-        self.emails_button.grid(row=0, column=1, sticky="w", padx=10)
-
-        # Log Frame
-        log_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        log_frame.pack(fill="both", expand=True)
-
-        ctk.CTkLabel(log_frame, text="Log de processos:", font=("Arial", 12)).pack(anchor="w", pady=(0, 5))
-        log_text = ctk.CTkTextbox(log_frame, font=("Arial", 12))
-        log_text.pack(fill="both", expand=True)
-
-        # Logger
-        self.logger = Logger()
-        self.logger.register_log_widget(log_text, after_owner=self, interval_ms=100)
-        self.logger.start_pumping()
-    
-    #---------- PROCESSO PRINCIPAL ----------#
-    def _run(self):
-        if not os.path.exists(CAMINHO_REDE):
-            print(f"ERRO: O caminho base '{CAMINHO_REDE}' não existe.")
-            return
-        
-        # Leitura da data fornecida pelo usuário
-        data_input = self.data_entry.get().strip()
-        if not data_input:
-            data_alvo = datetime.now()
-        else:
-            try:
-                data_alvo = datetime.strptime(data_input, "%d/%m/%Y")
-            except ValueError:
-                print("ERRO: Formato de data inválido. Insira no padrão DD/MM/AAAA.")
-                return
-
-        ano_vigente = data_alvo.strftime("%Y")
-        mes_vigente = MESES[data_alvo.month]
-        prefixo_arquivo_alvo = data_alvo.strftime("%d-%m")
-        data_referencia_str = data_alvo.strftime("%d/%m/%Y") # Usada para o controle de substituição
-
-        print(f"Buscando relatórios para a data: {prefixo_arquivo_alvo}-{ano_vigente} (Ref: {data_referencia_str})\n")
-        print("=" * 60)
-
-        # Dicionário para agrupar os dados por corretora
-        dados_por_corretora = {}
-
-        for corretora in os.listdir(CAMINHO_REDE):
-            caminho_corretora = os.path.join(CAMINHO_REDE, corretora)
-            
-            if not os.path.isdir(caminho_corretora):
-                continue
-
-            caminho_mes_vigente = os.path.join(caminho_corretora, ano_vigente, mes_vigente)
-
-            if not os.path.exists(caminho_mes_vigente):
-                continue
-
-            for arquivo in os.listdir(caminho_mes_vigente):
-                if arquivo.startswith(prefixo_arquivo_alvo) and arquivo.lower().endswith(".pdf"):
-                    caminho_pdf = os.path.join(caminho_mes_vigente, arquivo)
-                    
-                    print(f"Processando arquivo: {arquivo}")
-
-                    senha_pdf = "Y" if corretora.upper() == "SANTANDER" else None
-                    resultado = self._extrair_texto_pdf(caminho_pdf, senha=senha_pdf)
-                    
-                    if not resultado["sucesso"]:
-                        print(f"Erro na extração: {resultado['erro']}\n")
-                        print("-" * 60)
-                        continue
-
-                    texto_normalizado = self._normalizar_texto(resultado["texto"])
-
-                    if corretora.upper() == "SCOTIABANK":
-                        contrato = self._contrato_scotiabank(texto_normalizado)
-                        validacao = self._validar_contrato(contrato, CAMPOS_OBRIGATORIOS_SCOTIA)
-                    else:
-                        contrato = self._contrato_generico(texto_normalizado)
-                        validacao = self._validar_contrato(contrato, CAMPOS_OBRIGATORIOS_GENERICO)
-
-                    if validacao['valido']:
-                        print("Validação: VÁLIDO")
-                    else:
-                        print("Validação: INVÁLIDO")
-                        for erro in validacao["erros"]:
-                            print(f" - {erro}")
-                    
-                    # Adicionando metadados importantes, incluindo a Data Referência para empilhar
-                    contrato_com_metadados = {
-                        "Data Referência": data_referencia_str, 
-                        "Corretora Origem": corretora,
-                        "Arquivo": arquivo,
-                        "Status Validação": "Válido" if validacao['valido'] else "Inválido"
-                    }
-                    contrato_com_metadados.update(contrato)
-                    
-                    # Salva os dados dentro da chave específica da corretora correspondente
-                    if corretora not in dados_por_corretora:
-                        dados_por_corretora[corretora] = []
-                    
-                    dados_por_corretora[corretora].append(contrato_com_metadados)
-                    print("-" * 60)
-        
-        # Início do salvamento individualizado
-        if dados_por_corretora:
-            print("\nIniciando salvamento/atualização nas planilhas...")
-            for nome_corretora, registros in dados_por_corretora.items():
-                self._salvar_planilha_corretora(nome_corretora, registros, data_referencia_str)
-            print("\n✅ Processamento concluído!")
-        else:
-            print(f"\nNenhum contrato foi extraído/encontrado para a data {data_referencia_str}.")
-
-    #---------- MÉTODO NOVO PARA SALVAMENTO POR CORRETORA ----------#
+#---------- MÉTODO NOVO PARA SALVAMENTO POR CORRETORA ----------#
     def _salvar_planilha_corretora(self, corretora, dados_novos, data_referencia_str):
         # 1. Verifica/Cria a pasta raiz de Relatórios
         pasta_base = "Relatorios_Gerados"
@@ -179,5 +32,17 @@ def create_widgets(self):
             # Se a planilha não existe, apenas grava os novos
             df_final = df_novos
             
+        # 4. Ordenação cronológica dos dados
+        # Cria colunas temporárias convertidas para o tipo datetime do Pandas (evita ordenação alfabética '01' > '02')
+        if "Data Referência" in df_final.columns and "Data" in df_final.columns:
+            df_final['Data_Ref_Temp'] = pd.to_datetime(df_final['Data Referência'], format='%d/%m/%Y', errors='coerce')
+            df_final['Data_Op_Temp'] = pd.to_datetime(df_final['Data'], format='%d/%m/%Y', errors='coerce')
+            
+            # Ordena com base nas colunas temporárias e recria o index
+            df_final = df_final.sort_values(by=['Data_Ref_Temp', 'Data_Op_Temp'], ascending=[True, True])
+            
+            # Remove as colunas temporárias antes de exportar
+            df_final = df_final.drop(columns=['Data_Ref_Temp', 'Data_Op_Temp'])
+            
         df_final.to_excel(caminho_excel, index=False)
-        print(f"📄 Arquivo salvo para {corretora}: {len(dados_novos)} contratos da data {data_referencia_str} atualizados.")
+        print(f"📄 Arquivo salvo para {corretora}: {len(dados_novos)} contratos da data {data_referencia_str} atualizados e ordenados.")
