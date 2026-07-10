@@ -33,16 +33,37 @@
             df_final = df_novos
             
         # 4. Ordenação cronológica dos dados
-        # Cria colunas temporárias convertidas para o tipo datetime do Pandas (evita ordenação alfabética '01' > '02')
         if "Data Referência" in df_final.columns and "Data" in df_final.columns:
             df_final['Data_Ref_Temp'] = pd.to_datetime(df_final['Data Referência'], format='%d/%m/%Y', errors='coerce')
             df_final['Data_Op_Temp'] = pd.to_datetime(df_final['Data'], format='%d/%m/%Y', errors='coerce')
             
-            # Ordena com base nas colunas temporárias e recria o index
             df_final = df_final.sort_values(by=['Data_Ref_Temp', 'Data_Op_Temp'], ascending=[True, True])
-            
-            # Remove as colunas temporárias antes de exportar
             df_final = df_final.drop(columns=['Data_Ref_Temp', 'Data_Op_Temp'])
+
+        # 5. Filtragem Exata de Colunas
+        # Mapeamento com o nome exato da última coluna para bater com o dicionário
+        colunas_desejadas = [
+            "Data",
+            "Instituição",
+            "CNPJ Instituição",
+            "Cliente",
+            "CNPJ Cliente",
+            "Tipo do Contrato",
+            "Número do Contrato",
+            "Cod Moeda Estrangeira",
+            "Valor Moeda Estrangeira",
+            "Taxa Cambial",
+            "Valor Moeda Nacional",
+            "Código da Natureza",
+            "Liquidação Até",
+            "Descrição da Natureza do Fato",
+            "Código da relação de vínculo",
+            "Data Referência"  # Fundamental para o sistema de sobrescrita inteligente
+        ]
+        
+        # Garante que filtraremos apenas as colunas solicitadas
+        colunas_finais = [col for col in colunas_desejadas if col in df_final.columns]
+        df_final = df_final[colunas_finais]
             
         df_final.to_excel(caminho_excel, index=False)
         print(f"📄 Arquivo salvo para {corretora}: {len(dados_novos)} contratos da data {data_referencia_str} atualizados e ordenados.")
