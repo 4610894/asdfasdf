@@ -1,0 +1,186 @@
+<!-- 3. Interface HTML (index.html)Adicionaremos a nova tela oculta e o modal de eventos.Onde inserir: Dentro da <div id="dynamic-view-container" class="view-container">, logo abaixo do view-batimento.   -->
+
+
+
+<!-- ================= VIEW CHECKLIST ================= -->
+                <div id="view-checklist" class="view">
+                    <div class="view-header">
+                        <div class="view-header-title">
+                            <img src="intern/logo_itau.png" alt="Itaú" class="itau-logo" onerror="this.style.display='none'">
+                            <h2>Checklist de Atividades Diárias</h2>
+                        </div>
+                        <hr class="view-divider">
+                    </div>
+
+                    <div class="dashboard-controls" style="flex-wrap: wrap; gap: 15px;">
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <label><strong>Data:</strong></label>
+                            <input type="date" id="ch_data" class="form-control" style="width: 140px;">
+                            
+                            <label><strong>Status:</strong></label>
+                            <select id="ch_status" class="form-control" style="width: 140px;">
+                                <option>Todos</option><option>Pendente</option><option>Em andamento</option>
+                                <option>Concluído</option><option>Em atraso</option><option>Não se aplica</option>
+                            </select>
+
+                            <label><strong>Tarefa:</strong></label>
+                            <input type="text" id="ch_tarefa" class="form-control" style="width: 180px;">
+                            
+                            <button class="btn-primary" onclick="ChecklistApp.filtrar()">Filtrar</button>
+                        </div>
+                        <button class="btn-primary" onclick="ChecklistApp.abrirModalEvento()"><i class="fa-solid fa-plus"></i> Evento Especial</button>
+                    </div>
+
+                    <div class="dash-actions" id="ch_abas" style="margin-bottom: 10px;">
+                        <!-- Abas dinâmicas -->
+                    </div>
+                    
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th style="display:none;">ID</th>
+                                    <th>Tarefa</th>
+                                    <th>Data Evento</th>
+                                    <th>Status ✎</th>
+                                    <th>Responsável ✎</th>
+                                    <th>Observação ✎</th>
+                                    <th>Atualização</th>
+                                    <th id="th_esteira">Esteira</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ch_tabela_corpo">
+                                <!-- Preenchido via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+
+<!-- Adicione também o novo Modal: Logo abaixo da div <div id="modal-backdrop"...> que já existe no final do index.html.   -->
+
+    <!-- Modal Evento Especial -->
+    <div id="modal-evento-especial" class="modal-backdrop hidden">
+        <div class="modal-box" style="width: 400px;">
+            <div class="modal-header">
+                <h2>Gerenciar Evento Especial</h2>
+                <button class="btn-close" onclick="document.getElementById('modal-evento-especial').classList.add('hidden')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Selecione a Tarefa:</label>
+                    <select id="ch_modal_tarefa" class="form-control"></select>
+                </div>
+                <div class="form-group">
+                    <label>Selecione a Esteira:</label>
+                    <select id="ch_modal_esteira" class="form-control">
+                        <option>Todas</option><option>Pendente</option><option>Em andamento</option>
+                        <option>Concluído</option><option>Em atraso</option><option>Não se aplica</option>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button class="btn-primary" style="flex: 1;" onclick="ChecklistApp.gerenciarEvento('adicionar')">Adicionar</button>
+                    <button class="btn-primary" style="flex: 1; background-color: #d9534f;" onclick="ChecklistApp.gerenciarEvento('remover')">Remover</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- 3. Interface HTML (index.html)
+A) O Botão Principal:
+Dentro da <div id="view-checklist" class="view">, localize o botão Evento Especial (perto da div dashboard-controls) e adicione o botão de Gerenciar Tarefas logo ao lado: -->
+
+<!-- Adicione este botão logo após o botão do Evento Especial -->
+    <button class="btn-primary" onclick="ChecklistApp.abrirModalGerenciarTarefas()"><i class="fa-solid fa-list-check"></i> Gerenciar Tarefas</button>
+
+
+<!-- B) O Novo Modal:
+Cole este bloco inteiro no final do index.html, logo acima da tag de fechamento </body>: -->
+<!-- Modal Gerenciar Tarefas -->
+    <div id="modal-gerenciar-tarefas" class="modal-backdrop hidden">
+        <div class="modal-box" style="width: 800px; max-height: 90vh;">
+            <div class="modal-header">
+                <h2>Gerenciamento de Tarefas Diárias</h2>
+                <button class="btn-close" onclick="document.getElementById('modal-gerenciar-tarefas').classList.add('hidden')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" style="overflow-y: auto;">
+                
+                <div class="mod-section">
+                    <div class="mod-sec-title" id="lbl_titulo_form_tarefa">Adicionar Nova Tarefa</div>
+                    <input type="hidden" id="gt_id_tarefa">
+                    
+                    <div style="display: flex; gap: 15px; align-items: flex-end;">
+                        <div class="form-group" style="flex: 2; margin-bottom: 0;">
+                            <label>Nome da Tarefa:</label>
+                            <input type="text" id="gt_tarefa" class="form-control" placeholder="Descrição da tarefa...">
+                        </div>
+                        <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                            <label>Horário (HH:MM):</label>
+                            <input type="time" id="gt_horario" class="form-control">
+                        </div>
+                        <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                            <label>Esteira:</label>
+                            <input type="text" id="gt_esteira" class="form-control" placeholder="Ex: CETIP">
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 15px; display: flex; gap: 10px;">
+                        <button class="btn-primary" id="btn_salvar_tarefa" onclick="ChecklistApp.salvarTarefa()">Adicionar Tarefa</button>
+                        <button class="btn-tab hidden" id="btn_cancelar_edicao" onclick="ChecklistApp.cancelarEdicaoTarefa()">Cancelar Edição</button>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Tarefa</th>
+                                <th>Horário</th>
+                                <th>Esteira</th>
+                                <th style="width: 100px; text-align: center;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="gt_tabela_corpo">
+                            <!-- Preenchido via JS -->
+                        </tbody>
+                    </table>
+                </div>
+                
+            </div>
+        </div>
+    </div>
