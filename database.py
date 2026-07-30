@@ -1,160 +1,156 @@
-import pyodbc
-import datetime
-import config
+# 1. Alterações no Banco de Dados (database.py)
+# Adicione estes novos métodos dentro da sua classe DatabaseManager já existente. Eles executam exatamente as mesmas queries do seu código Tkinter original.
 
-class DatabaseManager:
-    def __init__(self):
-        self.conn = None
-        self.cursor = None
-        self.connect()
+# Onde inserir: No final do arquivo database.py, dentro da classe DatabaseManager, logo acima da linha db = DatabaseManager().
 
-    def connect(self):
-        try:
-            # Mantive a sua string de conexão original
-            self.conn = pyodbc.connect(
-                'DRIVER={ODBC Driver 17 for SQL Server};'
-                f'SERVER={config.SERVER};'
-                f'DATABASE={config.DATABASE};'
-                f'UID={config.USERNAME};'
-                f'PWD={config.PASSWORD}'
-            )
-            self.cursor = self.conn.cursor()
-            print('Conexão com o banco de dados estabelecida.')
-        except pyodbc.Error as e:
-            # Dica: Evite usar 'messagebox' (Tkinter) aqui, pois estamos em um sistema Web/Eel agora.
-            print(f"ERRO CRÍTICO - Não foi possível conectar ao banco:\n{e}")
-            self.conn = None
-            self.cursor = None
-
-    def _formatar_linha(self, row, cursor):
-        """Transforma a linha crua do SQL em um Dicionário para o JS entender"""
-        columns = [column[0] for column in cursor.description]
-        row_dict = dict(zip(columns, row))
-        
-        # Converte formatos de data do banco para strings legíveis pelo Eel/JS
-        for key, value in row_dict.items():
-            if value is None:
-                row_dict[key] = ""
-            elif isinstance(value, datetime.datetime):
-                row_dict[key] = value.strftime("%d/%m/%Y %H:%M")
-            elif isinstance(value, datetime.date):
-                row_dict[key] = value.strftime("%Y-%m-%d") # Padrão para input type="date"
-            elif isinstance(value, datetime.time):
-                # Pega apenas HORA:MINUTO (remove os segundos da string)
-                row_dict[key] = value.strftime("%H:%M")
-                
-        return row_dict
-
-    def obter_ativas(self):
-        if not self.conn: return []
-        self.cursor.execute("SELECT * FROM Ocorrencias WHERE status != 'Fechado' ORDER BY id DESC")
-        return [self._formatar_linha(row, self.cursor) for row in self.cursor.fetchall()]
-
-    def obter_todas(self):
-        if not self.conn: return []
-        self.cursor.execute("SELECT * FROM Ocorrencias ORDER BY id DESC")
-        return [self._formatar_linha(row, self.cursor) for row in self.cursor.fetchall()]
-
-    def obter_por_id(self, id_ocorrencia):
-        if not self.conn: return None
-        self.cursor.execute("SELECT * FROM Ocorrencias WHERE id = ?", (id_ocorrencia,))
-        row = self.cursor.fetchone()
-        return self._formatar_linha(row, self.cursor) if row else None
-
-    def obter_historico(self, id_ocorrencia):
-        if not self.conn: return []
-        self.cursor.execute("SELECT data_hora, status_novo, comentario FROM Historico_Ocorrencias WHERE ocorrencia_id = ? ORDER BY data_hora DESC", (id_ocorrencia,))
-        return [self._formatar_linha(row, self.cursor) for row in self.cursor.fetchall()]
-
-    def inserir_nova(self, dados):
-        if not self.conn: return -1
-        
-        query = """
-            INSERT INTO Ocorrencias (
-                data, hora, area, sistema, descricao, impacto, status, descumprimento,
-                desc_detalhe, plano_acao, reincidencia, rein_data, risco, risco_desc,
-                risco_valor, impacto_cliente, imp_cliente_desc, resp_plano, prazo
-            ) VALUES (?, ?, ?, ?, ?, ?, 'Aberto', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
-        
-        # O input do tipo "date" em HTML devolve string vazia se não preenchido. 
-        # O SQL Server espera NULL. Vamos tratar isso:
-        rein_data = dados.get('rein_data') if dados.get('rein_data') else None
-        prazo = dados.get('prazo') if dados.get('prazo') else None
-
-        valores = (
-            dados.get('data'), dados.get('hora'), dados.get('area'), dados.get('sistema'),
-            dados.get('descricao'), dados.get('impacto'), dados.get('descumprimento'),
-            dados.get('desc_detalhe'), dados.get('plano_acao'), dados.get('reincidencia'),
-            rein_data, dados.get('risco'), dados.get('risco_desc'), dados.get('risco_valor'),
-            dados.get('impacto_cliente'), dados.get('imp_cliente_desc'), dados.get('resp_plano'),
-            prazo
-        )
-
-        self.cursor.execute(query, valores)
-        
-        # Recupera o ID gerado pelo SQL Server
-        self.cursor.execute("SELECT @@IDENTITY AS id")
-        novo_id = int(self.cursor.fetchone()[0])
-
-        # Insere na tabela de histórico
-        agora = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.cursor.execute(
-            "INSERT INTO Historico_Ocorrencias (ocorrencia_id, data_hora, status_novo, comentario) VALUES (?, ?, 'Aberto', 'Ocorrência registrada via Formulário Web.')",
-            (novo_id, agora)
-        )
-        self.conn.commit()
-        return novo_id
-
-    def atualizar_status(self, id_ocorrencia, novo_status):
+# ================= FUNCIONALIDADES: CHECKLIST CETIP =================
+    def ch_inicializar_dia(self):
+        """Insere as tarefas diárias e atualiza atrasos (Substitui inserir_dados e revisar_status)"""
         if not self.conn: return
+        hoje = datetime.date.today().strftime("%Y-%m-%d")
         
-        self.cursor.execute("UPDATE Ocorrencias SET status = ? WHERE id = ?", (novo_status, id_ocorrencia))
+        # 1. Verifica e insere tarefas do dia
+        self.cursor.execute("SELECT TOP 1 data FROM liq.CHECKLIST_EXECUCAO WHERE data = ?", (hoje,))
+        if not self.cursor.fetchone():
+            self.cursor.execute("SELECT id FROM liq.CHECKLIST_TAREFAS WHERE esteira NOT LIKE 'ES - %'")
+            tarefas = self.cursor.fetchall()
+            for t in tarefas:
+                self.cursor.execute("INSERT INTO liq.CHECKLIST_EXECUCAO (id_tarefa, data, status) VALUES (?, ?, 'Pendente')", (t[0], hoje))
         
-        agora = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.cursor.execute(
-            "INSERT INTO Historico_Ocorrencias (ocorrencia_id, data_hora, status_novo, comentario) VALUES (?, ?, ?, 'Status modificado pelo sistema.')",
-            (id_ocorrencia, agora, novo_status)
-        )
+        # 2. Revisa status para "Em atraso"
+        query_atraso = """
+            UPDATE liq.CHECKLIST_EXECUCAO
+            SET status = 'Em atraso'
+            FROM liq.CHECKLIST_EXECUCAO e
+            JOIN liq.CHECKLIST_TAREFAS t ON e.id_tarefa = t.id
+            WHERE e.status = 'Pendente' 
+            AND e.data = CONVERT(date, GETDATE())
+            AND GETDATE() > CAST(e.data AS DATETIME) + CAST(t.horario_conclusao AS DATETIME)
+        """
+        self.cursor.execute(query_atraso)
         self.conn.commit()
 
-# Instância única exportada para o app.py
-db = DatabaseManager()
+    def ch_consultar(self, data, status, tarefa, esteira):
+        if not self.conn: return []
+        query = """
+            SELECT t.id AS id_tarefa, t.tarefa, t.esteira, t.data AS data_evento, e.status, 
+                   e.responsavel, e.observacoes, e.data_atualizacao
+            FROM liq.CHECKLIST_EXECUCAO e
+            JOIN liq.CHECKLIST_TAREFAS t ON e.id_tarefa = t.id
+            WHERE 1=1
+        """
+        params = []
+        if data:
+            query += " AND e.data = ?"; params.append(data)
+        if status and status != "Todos":
+            query += " AND e.status = ?"; params.append(status)
+        if tarefa:
+            query += " AND t.tarefa LIKE ?"; params.append(f"%{tarefa}%")
+        if esteira and esteira != "Todas":
+            if esteira == "Pendente": # Lógica original do Tkinter para esteira 'Pendente'
+                query += " AND t.esteira LIKE 'ES - %'"
+            else:
+                query += " AND t.esteira = ?"; params.append(esteira)
+                
+        query += " ORDER BY t.horario_conclusao"
+        self.cursor.execute(query, params)
+        return [self._formatar_linha(row, self.cursor) for row in self.cursor.fetchall()]
+
+    def ch_atualizar_celula(self, id_tarefa, data_evento, coluna, novo_valor):
+        if not self.conn: return False
+        try:
+            # Proteção contra SQL Injection mapeando a coluna permitida
+            colunas_validas = {"status": "status", "responsavel": "responsavel", "observacoes": "observacoes"}
+            col_db = colunas_validas.get(coluna)
+            if not col_db: return False
+
+            query = f"""
+                UPDATE liq.CHECKLIST_EXECUCAO
+                SET {col_db} = ?, data_atualizacao = SYSDATETIME()
+                WHERE id_tarefa = ? AND data = ?
+            """
+            self.cursor.execute(query, (novo_valor, id_tarefa, data_evento))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Erro ao atualizar célula: {e}")
+            return False
+
+    def ch_eventos_especiais(self, acao, tarefa=None, esteira=None):
+        if not self.conn: return []
+        hoje = datetime.date.today().strftime("%Y-%m-%d")
+        
+        if acao == "listar":
+            self.cursor.execute("SELECT DISTINCT(tarefa) FROM liq.CHECKLIST_TAREFAS WHERE esteira LIKE 'ES - %'")
+            return [row[0] for row in self.cursor.fetchall()]
+            
+        elif acao == "adicionar" or acao == "remover":
+            self.cursor.execute("SELECT id FROM liq.CHECKLIST_TAREFAS WHERE tarefa = ? AND esteira LIKE 'ES - %'", (tarefa,))
+            row = self.cursor.fetchone()
+            if not row: return {"status": "erro", "msg": "Tarefa não encontrada."}
+            id_tarefa = row[0]
+
+            if acao == "adicionar":
+                self.cursor.execute("SELECT 1 FROM liq.CHECKLIST_EXECUCAO WHERE id_tarefa = ? AND data = ?", (id_tarefa, hoje))
+                if self.cursor.fetchone(): return {"status": "erro", "msg": "Evento já inserido hoje."}
+                
+                self.cursor.execute("INSERT INTO liq.CHECKLIST_EXECUCAO (id_tarefa, data, status, esteira) VALUES (?, ?, 'Pendente', ?)", (id_tarefa, hoje, esteira))
+                self.conn.commit()
+                return {"status": "sucesso", "msg": "Evento adicionado!"}
+                
+            elif acao == "remover":
+                self.cursor.execute("DELETE FROM liq.CHECKLIST_EXECUCAO WHERE id_tarefa = ? AND data = ? AND esteira = ?", (id_tarefa, hoje, esteira))
+                if self.cursor.rowcount > 0:
+                    self.conn.commit()
+                    return {"status": "sucesso", "msg": "Evento removido!"}
+                return {"status": "erro", "msg": "Nenhum evento correspondente encontrado hoje."}
 
 
 
 
 
-# -- Tabela principal de registros operacionais
-# CREATE TABLE Ocorrencias (
-#     id INT IDENTITY(1,1) PRIMARY KEY,
-#     data DATE NOT NULL,
-#     hora TIME NOT NULL,
-#     area VARCHAR(100) NOT NULL,
-#     sistema VARCHAR(100) NOT NULL,
-#     descricao TEXT NOT NULL,
-#     impacto TEXT NOT NULL,
-#     status VARCHAR(50) DEFAULT 'Aberto',
-#     descumprimento VARCHAR(3),
-#     desc_detalhe TEXT,
-#     plano_acao VARCHAR(3),
-#     reincidencia VARCHAR(3),
-#     rein_data DATE NULL,
-#     risco VARCHAR(3),
-#     risco_desc TEXT,
-#     risco_valor VARCHAR(50),
-#     impacto_cliente VARCHAR(3),
-#     imp_cliente_desc TEXT,
-#     resp_plano VARCHAR(100),
-#     prazo DATE NULL
-# );
 
-# -- Tabela para guardar o rastro das alterações de status
-# CREATE TABLE Historico_Ocorrencias (
-#     id INT IDENTITY(1,1) PRIMARY KEY,
-#     ocorrencia_id INT NOT NULL,
-#     data_hora DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-#     status_novo VARCHAR(50) NOT NULL,
-#     comentario TEXT,
-#     CONSTRAINT FK_Ocorrencia_Historico FOREIGN KEY (ocorrencia_id) REFERENCES Ocorrencias(id)
-# );
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 1. Banco de Dados (database.py)
+# Adicione estes dois novos métodos no final da classe DatabaseManager (logo abaixo dos que criamos na etapa anterior):
+
+def ch_listar_tarefas_config(self):
+        """Busca todas as tarefas cadastradas no banco para o painel de gerenciamento"""
+        if not self.conn: return []
+        self.cursor.execute("SELECT id, tarefa, horario_conclusao, esteira FROM liq.CHECKLIST_TAREFAS ORDER BY esteira, horario_conclusao")
+        return [self._formatar_linha(row, self.cursor) for row in self.cursor.fetchall()]
+
+    def ch_gerenciar_tarefa(self, acao, id_tarefa=None, tarefa=None, horario=None, esteira=None):
+        """Realiza o CRUD (Inserir, Editar, Deletar) das tarefas"""
+        if not self.conn: return False
+        try:
+            if acao == "adicionar":
+                self.cursor.execute("INSERT INTO liq.CHECKLIST_TAREFAS (tarefa, horario_conclusao, esteira) VALUES (?, ?, ?)", (tarefa, horario, esteira))
+            
+            elif acao == "editar":
+                self.cursor.execute("UPDATE liq.CHECKLIST_TAREFAS SET tarefa = ?, horario_conclusao = ?, esteira = ? WHERE id = ?", (tarefa, horario, esteira, id_tarefa))
+            
+            elif acao == "deletar":
+                # É obrigatório deletar as execuções filhas primeiro para não dar erro de Chave Estrangeira
+                self.cursor.execute("DELETE FROM liq.CHECKLIST_EXECUCAO WHERE id_tarefa = ?", (id_tarefa,))
+                self.cursor.execute("DELETE FROM liq.CHECKLIST_TAREFAS WHERE id = ?", (id_tarefa,))
+                
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Erro ao gerenciar tarefa: {e}")
+            return False
