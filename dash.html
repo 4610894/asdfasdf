@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Multi-Áreas com AI</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-dark: #0b0f19;
+            --bg-panel: #161c28;
+            --bg-card: #1c2333;
+            --border-color: #2d3748;
+            --text-main: #e2e8f0;
+            --text-muted: #a0aec0;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --accent-purple: #8b5cf6;
+            --accent-orange: #f97316;
+            --chat-user: #2563eb;
+            --chat-ai: #374151;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Navegação Principal */
+        .top-nav {
+            display: flex;
+            background-color: var(--bg-panel);
+            padding: 0 20px;
+            border-bottom: 1px solid var(--border-color);
+            align-items: center;
+        }
+
+        .top-nav .tab {
+            padding: 15px 20px;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .top-nav .tab:hover {
+            color: var(--text-main);
+        }
+
+        .top-nav .tab.active {
+            color: var(--text-main);
+            border-bottom: 2px solid var(--accent-blue);
+        }
+
+        /* Layout Principal */
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Container que agrupa todas as visões (centro) */
+        .views-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Cada seção de visão (Aba) */
+        .view-section {
+            display: none; /* Oculto por padrão */
+            flex: 1;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .view-section.active-view {
+            display: flex; /* Exibe apenas a seção ativa */
+        }
+
+        /* Navegação Secundária */
+        .sub-nav {
+            display: flex;
+            background-color: var(--bg-dark);
+            padding: 10px 20px;
+            border-bottom: 1px solid var(--border-color);
+            gap: 20px;
+            font-size: 14px;
+        }
+
+        .sub-nav span {
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .sub-nav span:hover {
+            color: var(--text-main);
+        }
+
+        .sub-nav span.active {
+            color: var(--accent-blue);
+        }
+
+        /* Área de Conteúdo */
+        .content-area {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .header-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .filters {
+            display: flex;
+            gap: 15px;
+        }
+
+        .filter-select {
+            background-color: var(--bg-card);
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            padding: 8px 12px;
+            border-radius: 6px;
+            outline: none;
+        }
+
+        /* Grids Genéricos para KPIs */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        /* Grid Superior (Dashboard Operações) */
+        .top-grid {
+            display: flex;
+            gap: 20px;
+            height: 300px;
+        }
+
+        .kpi-column {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 250px;
+        }
+
+        .kpi-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 15px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .kpi-title { font-size: 13px; color: var(--text-muted); margin-bottom: 5px; }
+        .kpi-value { font-size: 24px; font-weight: bold; }
+        .kpi-badge { 
+            align-self: flex-start;
+            padding: 2px 8px; 
+            border-radius: 4px; 
+            font-size: 12px; 
+            margin-top: 5px;
+        }
+        .badge-green { background-color: rgba(16, 185, 129, 0.2); color: var(--accent-green); }
+        .badge-red { background-color: rgba(239, 68, 68, 0.2); color: var(--accent-red); }
+        .badge-blue { background-color: rgba(59, 130, 246, 0.2); color: var(--accent-blue); }
+
+        .chart-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 15px;
+            flex: 1;
+            position: relative;
+        }
+
+        /* Tabela */
+        .table-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 14px;
+        }
+
+        th {
+            color: var(--text-muted);
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 500;
+        }
+
+        td {
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .status-atraso { color: var(--accent-red); }
+
+        /* Sidebar do Chatbot (Direita) */
+        .chatbot-sidebar {
+            width: 350px;
+            background-color: var(--bg-panel);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-header {
+            padding: 15px;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            max-width: 85%;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .msg-ai {
+            background-color: var(--chat-ai);
+            align-self: flex-start;
+            border-bottom-left-radius: 0;
+        }
+
+        .msg-user {
+            background-color: var(--chat-user);
+            align-self: flex-end;
+            border-bottom-right-radius: 0;
+        }
+
+        .chat-input-area {
+            padding: 15px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input-area input {
+            flex: 1;
+            background-color: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            color: white;
+            padding: 10px;
+            border-radius: 6px;
+            outline: none;
+        }
+
+        .chat-input-area button {
+            background-color: var(--accent-blue);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .chat-input-area button:hover { background-color: #2563eb; }
+
+        .btn-action {
+            background-color: transparent;
+            border: 1px solid var(--accent-blue);
+            color: var(--accent-blue);
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin-top: 10px;
+            cursor: pointer;
+        }
+        
+        .placeholder-box {
+            border: 2px dashed var(--border-color);
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            color: var(--text-muted);
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Tabs Áreas (Adicionado data-target para o JavaScript saber qual aba abrir) -->
+    <header class="top-nav">
+        <div class="tab" data-target="geral">Visão Geral</div>
+        <div class="tab" data-target="financas">Finanças</div>
+        <div class="tab active" data-target="operacoes">Operações</div>
+        <div class="tab" data-target="comercial">Comercial</div>
+        <div class="tab" data-target="rh">RH</div>
+    </header>
+
+    <div class="main-container">
+        
+        <!-- WRAPPER DAS VISÕES CENTRAIS -->
+        <div class="views-wrapper">
+            
+            <!-- 1. ABA: VISÃO GERAL -->
+            <section id="view-geral" class="view-section">
+                <main class="content-area">
+                    <div class="header-actions">
+                        <h2>Visão Geral da Empresa</h2>
+                    </div>
+                    <div class="kpi-grid">
+                        <div class="kpi-card" style="border-top: 3px solid var(--accent-blue)">
+                            <div class="kpi-title">Receita Total do Mês</div>
+                            <div class="kpi-value">R$ 4.2M</div>
+                            <div class="kpi-badge badge-green">↗ 12% vs mês ant.</div>
+                        </div>
+                        <div class="kpi-card" style="border-top: 3px solid var(--accent-green)">
+                            <div class="kpi-title">Processos Concluídos</div>
+                            <div class="kpi-value">8,432</div>
+                            <div class="kpi-badge badge-green">No alvo</div>
+                        </div>
+                        <div class="kpi-card" style="border-top: 3px solid var(--accent-orange)">
+                            <div class="kpi-title">Satisfação do Cliente (NPS)</div>
+                            <div class="kpi-value">72</div>
+                            <div class="kpi-badge badge-blue">Estável</div>
+                        </div>
+                    </div>
+                    <div class="placeholder-box">
+                        Aqui entraria um dashboard macro estratégico cruzando dados de todas as diretorias.
+                    </div>
+                </main>
+            </section>
+
+            <!-- 2. ABA: FINANÇAS -->
+            <section id="view-financas" class="view-section">
+                <main class="content-area">
+                    <div class="header-actions">
+                        <h2>Dashboard Financeiro</h2>
+                        <select class="filter-select"><option>Q3 2024</option></select>
+                    </div>
+                    <div class="kpi-grid">
+                        <div class="kpi-card">
+                            <div class="kpi-title">Caixa Atual (Burn Rate)</div>
+                            <div class="kpi-value">R$ 850k</div>
+                            <div class="kpi-badge badge-red">Atenção</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-title">Inadimplência</div>
+                            <div class="kpi-value">3.2%</div>
+                            <div class="kpi-badge badge-green">Saudável</div>
+                        </div>
+                    </div>
+                    <div class="placeholder-box">
+                        Gráficos de DRE, Fluxo de Caixa e Projeções Financeiras.
+                    </div>
+                </main>
+            </section>
+
+            <!-- 3. ABA: OPERAÇÕES (A original, ativa por padrão) -->
+            <section id="view-operacoes" class="view-section active-view">
+                <nav class="sub-nav">
+                    <span class="active" data-title="Visão Geral Operacional">Visão Geral Operacional</span>
+                    <span data-title="Performance de Processos">Performance de Processos</span>
+                    <span data-title="Qualidade">Qualidade</span>
+                    <span data-title="Análise de Carga">Análise de Carga</span>
+                </nav>
+
+                <main class="content-area">
+                    <div class="header-actions">
+                        <h2 id="op-title">Visão Geral Operacional</h2>
+                        <div class="filters">
+                            <select class="filter-select"><option>Últimos 7 dias</option></select>
+                            <select class="filter-select"><option>Todos os Processos</option></select>
+                        </div>
+                    </div>
+
+                    <div class="top-grid">
+                        <div class="kpi-column">
+                            <div class="kpi-card">
+                                <div class="kpi-title">Tempo Médio de Execução</div>
+                                <div class="kpi-value">1.2h</div>
+                                <div class="kpi-badge badge-green">No alvo</div>
+                            </div>
+                            <div class="kpi-card">
+                                <div class="kpi-title">Volumetria Total</div>
+                                <div class="kpi-value">1,500 <span style="font-size:14px; font-weight:normal; color:var(--text-muted)">proc.</span></div>
+                                <div class="kpi-badge badge-green">↗ 1.5%</div>
+                            </div>
+                            <div class="kpi-card">
+                                <div class="kpi-title">Taxa de Erros</div>
+                                <div class="kpi-value">0.5%</div>
+                                <div class="kpi-badge badge-green">Saudável</div>
+                            </div>
+                        </div>
+
+                        <div class="chart-card">
+                            <h3 style="font-size:14px; color:var(--text-muted); margin-bottom: 10px;">Volumetria de Processos vs. Capacidade (Intradiário)</h3>
+                            <canvas id="myChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="table-card">
+                        <h3 style="font-size:14px; color:var(--text-muted); margin-bottom: 15px;">Processos Pendentes e em Atraso</h3>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Tipo de Processo</th>
+                                    <th>Status</th>
+                                    <th>Responsável</th>
+                                    <th>Tempo Decorrido</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>PR001</td><td>Validação de Fundos</td><td class="status-atraso">Em Atraso</td><td>Ana Silva</td><td>2.5h</td></tr>
+                                <tr><td>PR002</td><td>Conciliação Bancária</td><td class="status-atraso">Em Atraso</td><td>Carlos Mendes</td><td>3.1h</td></tr>
+                                <tr><td>PR003</td><td>Auditoria Interna</td><td class="status-atraso">Em Atraso</td><td>Julia Costa</td><td>4.0h</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </main>
+            </section>
+
+            <!-- 4. ABA: COMERCIAL -->
+            <section id="view-comercial" class="view-section">
+                <main class="content-area">
+                    <div class="header-actions">
+                        <h2>Dashboard Comercial</h2>
+                    </div>
+                    <div class="placeholder-box">
+                        Pipeline de Vendas, Funil de Conversão e Metas da Equipe.
+                    </div>
+                </main>
+            </section>
+
+            <!-- 5. ABA: RH -->
+            <section id="view-rh" class="view-section">
+                <main class="content-area">
+                    <div class="header-actions">
+                        <h2>Dashboard de Recursos Humanos</h2>
+                    </div>
+                    <div class="kpi-grid">
+                        <div class="kpi-card">
+                            <div class="kpi-title">Turnover Mês</div>
+                            <div class="kpi-value">1.8%</div>
+                            <div class="kpi-badge badge-blue">Estável</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-title">Vagas Abertas</div>
+                            <div class="kpi-value">14</div>
+                        </div>
+                    </div>
+                </main>
+            </section>
+
+        </div>
+
+        <!-- Chatbot Persistente -->
+        <aside class="chatbot-sidebar">
+            <div class="chat-header">
+                💬 Assistente AI
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                <div class="message msg-ai">
+                    Olá! Sou seu assistente de dados. Estou analisando os dados da área que você está visualizando no momento. O que você gostaria de explorar?
+                </div>
+            </div>
+            <div class="chat-input-area">
+                <input type="text" id="chat-input" placeholder="Peça um gráfico ou dash...">
+                <button id="send-btn">Enviar</button>
+            </div>
+        </aside>
+    </div>
+
+    <!-- LÓGICAS EM JAVASCRIPT -->
+    <script>
+        // --- 1. LÓGICA DE NAVEGAÇÃO DAS ABAS PRINCIPAIS ---
+        const topTabs = document.querySelectorAll('.top-nav .tab');
+        const viewSections = document.querySelectorAll('.view-section');
+
+        topTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Remove 'active' de todas as abas superiores
+                topTabs.forEach(t => t.classList.remove('active'));
+                // Adiciona 'active' na aba clicada
+                tab.classList.add('active');
+
+                // Esconde todas as visões
+                viewSections.forEach(section => section.classList.remove('active-view'));
+                
+                // Mostra a visão correspondente ao data-target da aba clicada
+                const targetViewId = 'view-' + tab.getAttribute('data-target');
+                document.getElementById(targetViewId).classList.add('active-view');
+            });
+        });
+
+        // --- 2. LÓGICA DE NAVEGAÇÃO DAS SUB-ABAS (Dentro de Operações) ---
+        const opSubTabs = document.querySelectorAll('#view-operacoes .sub-nav span');
+        const opTitle = document.getElementById('op-title');
+
+        opSubTabs.forEach(subTab => {
+            subTab.addEventListener('click', () => {
+                // Troca a classe active da sub-aba
+                opSubTabs.forEach(t => t.classList.remove('active'));
+                subTab.classList.add('active');
+                
+                // Simula a troca de visão alterando o título do H2
+                opTitle.innerText = subTab.getAttribute('data-title');
+            });
+        });
+
+        // --- 3. CONFIGURAÇÃO DO GRÁFICO (Chart.js) ---
+        const ctx = document.getElementById('myChart').getContext('2d');
+        const myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['08:00', '10:00', '12:00', '14:00', '16:00', '18:00'],
+                datasets: [
+                    {
+                        label: 'Atual (Current)',
+                        data: [0.5, 1.8, 1.2, 2.5, 1.5, 0.2],
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.4,
+                        fill: true
+                    },
+                    {
+                        label: 'Alvo (Target)',
+                        data: [0.2, 1.0, 1.5, 1.8, 2.0, 0.5],
+                        borderColor: '#10b981',
+                        borderWidth: 2,
+                        borderDash: [5, 5],
+                        tension: 0.4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: '#e2e8f0' } } },
+                scales: {
+                    x: { ticks: { color: '#a0aec0' }, grid: { color: '#2d3748' } },
+                    y: { ticks: { color: '#a0aec0' }, grid: { color: '#2d3748' } }
+                }
+            }
+        });
+
+        // --- 4. LÓGICA DO CHATBOT SIMULADO ---
+        const chatInput = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-btn');
+        const chatMessages = document.getElementById('chat-messages');
+
+        function addMessage(text, sender) {
+            const msgDiv = document.createElement('div');
+            msgDiv.classList.add('message');
+            msgDiv.classList.add(sender === 'user' ? 'msg-user' : 'msg-ai');
+            
+            if (sender === 'ai' && text.includes('Gerando')) {
+                 msgDiv.innerHTML = text + '<br><button class="btn-action">Acessar Nova Visão</button>';
+            } else {
+                 msgDiv.innerText = text;
+            }
+
+            chatMessages.appendChild(msgDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function handleSend() {
+            const text = chatInput.value.trim();
+            if (!text) return;
+
+            addMessage(text, 'user');
+            chatInput.value = '';
+
+            setTimeout(() => {
+                const aiResponse = `Entendido! Gerando uma visualização personalizada para a solicitação "${text}". Um novo painel foi gerado e está pronto.`;
+                addMessage(aiResponse, 'ai');
+            }, 1500);
+        }
+
+        sendBtn.addEventListener('click', handleSend);
+        chatInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') handleSend();
+        });
+    </script>
+</body>
+</html>
