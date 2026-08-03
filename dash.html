@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Multi-Áreas com AI</title>
+    <title>Dashboard Financeiro Multi-Áreas com AI</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
@@ -45,7 +45,13 @@
             padding: 0 20px;
             border-bottom: 1px solid var(--border-color);
             align-items: center;
+            overflow-x: auto; /* Permite scroll se tiver muitas abas */
+            white-space: nowrap;
         }
+
+        /* Estilizando a barra de rolagem da navegação superior */
+        .top-nav::-webkit-scrollbar { height: 4px; }
+        .top-nav::-webkit-scrollbar-thumb { background-color: var(--border-color); border-radius: 4px; }
 
         .top-nav .tab {
             padding: 15px 20px;
@@ -152,7 +158,7 @@
             gap: 20px;
         }
 
-        /* Grid Superior (Dashboard Operações) */
+        /* Grid Superior (Dashboard Principal) */
         .top-grid {
             display: flex;
             gap: 20px;
@@ -235,6 +241,7 @@
             border-left: 1px solid var(--border-color);
             display: flex;
             flex-direction: column;
+            flex-shrink: 0;
         }
 
         .chat-header {
@@ -326,13 +333,15 @@
 </head>
 <body>
 
-    <!-- Tabs Áreas (Adicionado data-target para o JavaScript saber qual aba abrir) -->
+    <!-- Tabs Áreas (Atualizadas conforme as áreas solicitadas) -->
     <header class="top-nav">
-        <div class="tab" data-target="geral">Visão Geral</div>
-        <div class="tab" data-target="financas">Finanças</div>
-        <div class="tab active" data-target="operacoes">Operações</div>
-        <div class="tab" data-target="comercial">Comercial</div>
-        <div class="tab" data-target="rh">RH</div>
+        <div class="tab" data-target="futuros">Futuros</div>
+        <div class="tab" data-target="renda-variavel">Renda Variável</div>
+        <div class="tab" data-target="margem-rv">Margem Renda Variável</div>
+        <div class="tab" data-target="margem-dinheiro">Margem Dinheiro</div>
+        <div class="tab" data-target="termo">Termo</div>
+        <div class="tab" data-target="selic">SELIC</div>
+        <div class="tab active" data-target="cetip">CETIP</div>
     </header>
 
     <div class="main-container">
@@ -340,153 +349,127 @@
         <!-- WRAPPER DAS VISÕES CENTRAIS -->
         <div class="views-wrapper">
             
-            <!-- 1. ABA: VISÃO GERAL -->
-            <section id="view-geral" class="view-section">
+            <!-- 1. ABA: FUTUROS -->
+            <section id="view-futuros" class="view-section">
                 <main class="content-area">
-                    <div class="header-actions">
-                        <h2>Visão Geral da Empresa</h2>
-                    </div>
-                    <div class="kpi-grid">
-                        <div class="kpi-card" style="border-top: 3px solid var(--accent-blue)">
-                            <div class="kpi-title">Receita Total do Mês</div>
-                            <div class="kpi-value">R$ 4.2M</div>
-                            <div class="kpi-badge badge-green">↗ 12% vs mês ant.</div>
-                        </div>
-                        <div class="kpi-card" style="border-top: 3px solid var(--accent-green)">
-                            <div class="kpi-title">Processos Concluídos</div>
-                            <div class="kpi-value">8,432</div>
-                            <div class="kpi-badge badge-green">No alvo</div>
-                        </div>
-                        <div class="kpi-card" style="border-top: 3px solid var(--accent-orange)">
-                            <div class="kpi-title">Satisfação do Cliente (NPS)</div>
-                            <div class="kpi-value">72</div>
-                            <div class="kpi-badge badge-blue">Estável</div>
-                        </div>
-                    </div>
+                    <div class="header-actions"><h2>Módulo de Futuros</h2></div>
                     <div class="placeholder-box">
-                        Aqui entraria um dashboard macro estratégico cruzando dados de todas as diretorias.
+                        Aqui entrará a visão de Posições, Ajustes e Vencimentos de Contratos Futuros (BM&F).
                     </div>
                 </main>
             </section>
 
-            <!-- 2. ABA: FINANÇAS -->
-            <section id="view-financas" class="view-section">
+            <!-- 2. ABA: RENDA VARIÁVEL -->
+            <section id="view-renda-variavel" class="view-section">
                 <main class="content-area">
-                    <div class="header-actions">
-                        <h2>Dashboard Financeiro</h2>
-                        <select class="filter-select"><option>Q3 2024</option></select>
-                    </div>
-                    <div class="kpi-grid">
-                        <div class="kpi-card">
-                            <div class="kpi-title">Caixa Atual (Burn Rate)</div>
-                            <div class="kpi-value">R$ 850k</div>
-                            <div class="kpi-badge badge-red">Atenção</div>
-                        </div>
-                        <div class="kpi-card">
-                            <div class="kpi-title">Inadimplência</div>
-                            <div class="kpi-value">3.2%</div>
-                            <div class="kpi-badge badge-green">Saudável</div>
-                        </div>
-                    </div>
+                    <div class="header-actions"><h2>Renda Variável</h2></div>
                     <div class="placeholder-box">
-                        Gráficos de DRE, Fluxo de Caixa e Projeções Financeiras.
+                        Dashboard com volume negociado de Ações, FIIs e Opções.
                     </div>
                 </main>
             </section>
 
-            <!-- 3. ABA: OPERAÇÕES (A original, ativa por padrão) -->
-            <section id="view-operacoes" class="view-section active-view">
+            <!-- 3. ABA: MARGEM RENDA VARIÁVEL -->
+            <section id="view-margem-rv" class="view-section">
+                <main class="content-area">
+                    <div class="header-actions"><h2>Chamadas de Margem - Renda Variável</h2></div>
+                    <div class="placeholder-box">
+                        Monitoramento de garantias exigidas e alocadas na B3 para mercado à vista e opções.
+                    </div>
+                </main>
+            </section>
+
+            <!-- 4. ABA: MARGEM DINHEIRO -->
+            <section id="view-margem-dinheiro" class="view-section">
+                <main class="content-area">
+                    <div class="header-actions"><h2>Margem em Dinheiro</h2></div>
+                    <div class="placeholder-box">
+                        Controle de fluxo de caixa livre e garantias financeiras retidas.
+                    </div>
+                </main>
+            </section>
+
+            <!-- 5. ABA: TERMO -->
+            <section id="view-termo" class="view-section">
+                <main class="content-area">
+                    <div class="header-actions"><h2>Operações a Termo</h2></div>
+                    <div class="placeholder-box">
+                        Visão de taxas (Taxa Termo), contratos em aberto e liquidações antecipadas.
+                    </div>
+                </main>
+            </section>
+
+            <!-- 6. ABA: SELIC -->
+            <section id="view-selic" class="view-section">
+                <main class="content-area">
+                    <div class="header-actions"><h2>Sistema Especial de Liquidação e Custódia (SELIC)</h2></div>
+                    <div class="placeholder-box">
+                        Visão de liquidação de Títulos Públicos Federais (TPF).
+                    </div>
+                </main>
+            </section>
+
+            <!-- 7. ABA: CETIP (A original, ativa por padrão, contendo o dashboard bonito) -->
+            <section id="view-cetip" class="view-section active-view">
                 <nav class="sub-nav">
-                    <span class="active" data-title="Visão Geral Operacional">Visão Geral Operacional</span>
-                    <span data-title="Performance de Processos">Performance de Processos</span>
-                    <span data-title="Qualidade">Qualidade</span>
+                    <span class="active" data-title="Visão Geral CETIP">Visão Geral CETIP</span>
+                    <span data-title="Performance de Liquidação">Performance de Liquidação</span>
+                    <span data-title="Qualidade de Registro">Qualidade de Registro</span>
                     <span data-title="Análise de Carga">Análise de Carga</span>
                 </nav>
 
                 <main class="content-area">
                     <div class="header-actions">
-                        <h2 id="op-title">Visão Geral Operacional</h2>
+                        <h2 id="cetip-title">Visão Geral CETIP</h2>
                         <div class="filters">
                             <select class="filter-select"><option>Últimos 7 dias</option></select>
-                            <select class="filter-select"><option>Todos os Processos</option></select>
+                            <select class="filter-select"><option>Todos os Títulos Privados</option></select>
                         </div>
                     </div>
 
                     <div class="top-grid">
                         <div class="kpi-column">
                             <div class="kpi-card">
-                                <div class="kpi-title">Tempo Médio de Execução</div>
+                                <div class="kpi-title">Tempo Médio de Registro</div>
                                 <div class="kpi-value">1.2h</div>
                                 <div class="kpi-badge badge-green">No alvo</div>
                             </div>
                             <div class="kpi-card">
                                 <div class="kpi-title">Volumetria Total</div>
-                                <div class="kpi-value">1,500 <span style="font-size:14px; font-weight:normal; color:var(--text-muted)">proc.</span></div>
+                                <div class="kpi-value">1,500 <span style="font-size:14px; font-weight:normal; color:var(--text-muted)">oper.</span></div>
                                 <div class="kpi-badge badge-green">↗ 1.5%</div>
                             </div>
                             <div class="kpi-card">
-                                <div class="kpi-title">Taxa de Erros</div>
+                                <div class="kpi-title">Taxa de Rejeição B3</div>
                                 <div class="kpi-value">0.5%</div>
                                 <div class="kpi-badge badge-green">Saudável</div>
                             </div>
                         </div>
 
                         <div class="chart-card">
-                            <h3 style="font-size:14px; color:var(--text-muted); margin-bottom: 10px;">Volumetria de Processos vs. Capacidade (Intradiário)</h3>
+                            <h3 style="font-size:14px; color:var(--text-muted); margin-bottom: 10px;">Volumetria de Operações vs. Capacidade (Intradiário)</h3>
                             <canvas id="myChart"></canvas>
                         </div>
                     </div>
 
                     <div class="table-card">
-                        <h3 style="font-size:14px; color:var(--text-muted); margin-bottom: 15px;">Processos Pendentes e em Atraso</h3>
+                        <h3 style="font-size:14px; color:var(--text-muted); margin-bottom: 15px;">Operações Pendentes e em Atraso (Balcão)</h3>
                         <table>
                             <thead>
                                 <tr>
-                                    <th>ID</th>
-                                    <th>Tipo de Processo</th>
-                                    <th>Status</th>
-                                    <th>Responsável</th>
+                                    <th>ID Operação</th>
+                                    <th>Tipo de Ativo</th>
+                                    <th>Status B3</th>
+                                    <th>Mesa Responsável</th>
                                     <th>Tempo Decorrido</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr><td>PR001</td><td>Validação de Fundos</td><td class="status-atraso">Em Atraso</td><td>Ana Silva</td><td>2.5h</td></tr>
-                                <tr><td>PR002</td><td>Conciliação Bancária</td><td class="status-atraso">Em Atraso</td><td>Carlos Mendes</td><td>3.1h</td></tr>
-                                <tr><td>PR003</td><td>Auditoria Interna</td><td class="status-atraso">Em Atraso</td><td>Julia Costa</td><td>4.0h</td></tr>
+                                <tr><td>OP-CDB-001</td><td>Registro de CDB</td><td class="status-atraso">Pendente Validação</td><td>Mesa Renda Fixa</td><td>2.5h</td></tr>
+                                <tr><td>OP-LCA-002</td><td>Transferência LCA</td><td class="status-atraso">Erro de Contraparte</td><td>Mesa Institucional</td><td>3.1h</td></tr>
+                                <tr><td>OP-DI-003</td><td>Derivativo DI</td><td class="status-atraso">Limite Excedido</td><td>Gestão de Risco</td><td>4.0h</td></tr>
                             </tbody>
                         </table>
-                    </div>
-                </main>
-            </section>
-
-            <!-- 4. ABA: COMERCIAL -->
-            <section id="view-comercial" class="view-section">
-                <main class="content-area">
-                    <div class="header-actions">
-                        <h2>Dashboard Comercial</h2>
-                    </div>
-                    <div class="placeholder-box">
-                        Pipeline de Vendas, Funil de Conversão e Metas da Equipe.
-                    </div>
-                </main>
-            </section>
-
-            <!-- 5. ABA: RH -->
-            <section id="view-rh" class="view-section">
-                <main class="content-area">
-                    <div class="header-actions">
-                        <h2>Dashboard de Recursos Humanos</h2>
-                    </div>
-                    <div class="kpi-grid">
-                        <div class="kpi-card">
-                            <div class="kpi-title">Turnover Mês</div>
-                            <div class="kpi-value">1.8%</div>
-                            <div class="kpi-badge badge-blue">Estável</div>
-                        </div>
-                        <div class="kpi-card">
-                            <div class="kpi-title">Vagas Abertas</div>
-                            <div class="kpi-value">14</div>
-                        </div>
                     </div>
                 </main>
             </section>
@@ -532,18 +515,18 @@
             });
         });
 
-        // --- 2. LÓGICA DE NAVEGAÇÃO DAS SUB-ABAS (Dentro de Operações) ---
-        const opSubTabs = document.querySelectorAll('#view-operacoes .sub-nav span');
-        const opTitle = document.getElementById('op-title');
+        // --- 2. LÓGICA DE NAVEGAÇÃO DAS SUB-ABAS (Dentro de CETIP) ---
+        const cetipSubTabs = document.querySelectorAll('#view-cetip .sub-nav span');
+        const cetipTitle = document.getElementById('cetip-title');
 
-        opSubTabs.forEach(subTab => {
+        cetipSubTabs.forEach(subTab => {
             subTab.addEventListener('click', () => {
                 // Troca a classe active da sub-aba
-                opSubTabs.forEach(t => t.classList.remove('active'));
+                cetipSubTabs.forEach(t => t.classList.remove('active'));
                 subTab.classList.add('active');
                 
                 // Simula a troca de visão alterando o título do H2
-                opTitle.innerText = subTab.getAttribute('data-title');
+                cetipTitle.innerText = subTab.getAttribute('data-title');
             });
         });
 
