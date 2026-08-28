@@ -18,14 +18,49 @@
             --accent-cyan: #0ce8d1;
             --accent-cyan-bg: rgba(12, 232, 209, 0.1);
             --accent-orange: #f97316;
+            --accent-orange-bg: rgba(249, 115, 22, 0.1);
             --border-color: #334155;
             --radius: 6px;
         }
 
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-main); color: var(--text-primary); margin: 0; padding: 20px; font-size: 14px; }
-        .header-container { margin-bottom: 20px; }
-        .header-container h1 { font-size: 22px; margin: 0 0 15px 0; font-weight: 600; color: var(--text-primary); }
+        .header-container { margin-bottom: 20px; display: flex; flex-direction: column; gap: 15px; }
+        .header-container h1 { font-size: 24px; margin: 0; font-weight: 600; color: var(--text-primary); }
 
+        /* NOVO: Menu Superior de Áreas */
+        .areas-container {
+            display: flex;
+            gap: 12px;
+            background-color: var(--bg-card);
+            padding: 10px 15px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border-color);
+            overflow-x: auto;
+        }
+
+        .area-btn {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid transparent;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 14px;
+            transition: all 0.3s;
+            white-space: nowrap;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .area-btn:hover { color: var(--text-primary); background: rgba(255, 255, 255, 0.05); }
+        .area-btn.active { 
+            color: var(--accent-orange); 
+            border: 1px solid var(--accent-orange);
+            background: var(--accent-orange-bg);
+        }
+
+        /* Controls */
         .controls-bar { background-color: var(--bg-card); border: 1px solid var(--border-color); padding: 25px 20px 20px 20px; border-radius: var(--radius); display: flex; align-items: center; gap: 30px; flex-wrap: wrap; margin-bottom: 20px; }
         .control-group { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 200px; }
         .slider-group { flex: 2; min-width: 300px; }
@@ -35,10 +70,16 @@
         .noUi-connect { background: var(--accent-cyan); }
         .noUi-handle { border: 1px solid var(--accent-cyan); box-shadow: none; background: var(--bg-card); }
 
+        /* Tabs System (Visões) */
         .tabs-container { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; overflow-x: auto; }
         .tab-btn { background: transparent; color: var(--text-secondary); border: 1px solid transparent; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: 600; transition: all 0.3s; white-space: nowrap; }
         .tab-btn:hover { color: var(--text-primary); background: var(--bg-card); }
         .tab-btn.active { color: var(--accent-cyan); border: 1px solid var(--accent-cyan); background: var(--accent-cyan-bg); }
+        
+        /* Container de Áreas */
+        .area-content { display: none; animation: fadeIn 0.3s ease; }
+        .area-content.active { display: block; }
+        
         .tab-content { display: none; }
         .tab-content.active { display: block; animation: fadeIn 0.3s ease; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -61,15 +102,42 @@
         .status-pendente { color: var(--accent-orange); font-weight: bold; }
         
         #loading-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-main); display: flex; justify-content: center; align-items: center; z-index: 9999; color: var(--accent-cyan); font-size: 20px; font-weight: bold; transition: opacity 0.5s; }
+        
+        /* Placeholder para áreas em construção */
+        .em-construcao {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 400px;
+            background-color: var(--bg-card);
+            border: 1px dashed var(--border-color);
+            border-radius: var(--radius);
+            color: var(--text-secondary);
+        }
+        .em-construcao h2 { color: var(--accent-orange); margin-bottom: 10px;}
     </style>
 </head>
 <body>
     
-    <div id="loading-screen">Carregando base de dados...</div>
+    <div id="loading-screen">Carregando base de dados sintética...</div>
 
     <div class="header-container">
         <h1>Centro de Inteligência de Liquidação</h1>
         
+        <!-- Menu Principal: Áreas -->
+        <div class="areas-container">
+            <button class="area-btn" onclick="switchArea('area-selic')">SELIC</button>
+            <button class="area-btn" onclick="switchArea('area-futuros')">Futuros</button>
+            <button class="area-btn" onclick="switchArea('area-rv')">Renda Variável</button>
+            <button class="area-btn" onclick="switchArea('area-mrv')">Margem RV</button>
+            <button class="area-btn" onclick="switchArea('area-md')">Margem Dinheiro</button>
+            <button class="area-btn" onclick="switchArea('area-termo')">Termo</button>
+            <!-- CETIP definido como ativo por padrão -->
+            <button class="area-btn active" onclick="switchArea('area-cetip')">CETIP</button>
+        </div>
+        
+        <!-- Filtros Globais (Aplicam-se à área ativa) -->
         <div class="controls-bar">
             <div class="control-group slider-group">
                 <label>Período Base: <span id="dateLabel" style="color: var(--accent-cyan);"></span></label>
@@ -90,8 +158,13 @@
                 </select>
             </div>
         </div>
+    </div>
 
-        <!-- TABS NAV -->
+    <!-- ========================================== -->
+    <!-- CONTAINER ÁREA: CETIP (Visões Existentes)  -->
+    <!-- ========================================== -->
+    <div id="area-cetip" class="area-content active">
+        <!-- Submenu: Visões da CETIP -->
         <div class="tabs-container">
             <button class="tab-btn active" onclick="openTab('tab-vol')">Volume Intradiário</button>
             <button class="tab-btn" onclick="openTab('tab-fin')">Financeiro por Horário</button>
@@ -99,136 +172,180 @@
             <button class="tab-btn" onclick="openTab('tab-corretoras')">Top Corretoras</button>
             <button class="tab-btn" onclick="openTab('tab-leadtime')">Leadtime (SLA)</button>
         </div>
-    </div>
 
-    <!-- TAB 1: Volume Intradiário (Original) -->
-    <div id="tab-vol" class="tab-content active">
-        <div class="kpi-grid">
-            <div class="kpi-card">
-                <span class="kpi-title">Pico de Liquidação (Vol)</span>
-                <span class="kpi-value" id="kpiVolPico">--:--</span>
-                <span class="kpi-sub" id="kpiVolPicoSub">--</span>
+        <!-- TAB 1: Volume Intradiário (Com correção dos Zeros) -->
+        <div id="tab-vol" class="tab-content active">
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <span class="kpi-title">Pico de Liquidação (Vol)</span>
+                    <span class="kpi-value" id="kpiVolPico">--:--</span>
+                    <span class="kpi-sub" id="kpiVolPicoSub">--</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-title">Horário mais Volátil</span>
+                    <span class="kpi-value" id="kpiVolVolatil">--:--</span>
+                    <span class="kpi-sub">Alta dispersão (p25-p75)</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-title">Média Diária (Operações)</span>
+                    <span class="kpi-value" id="kpiVolMedia">0</span>
+                    <span class="kpi-sub alert" id="kpiVolTicket">Ticket: R$ 0,00</span>
+                </div>
             </div>
-            <div class="kpi-card">
-                <span class="kpi-title">Horário mais Volátil</span>
-                <span class="kpi-value" id="kpiVolVolatil">--:--</span>
-                <span class="kpi-sub">Alta dispersão (p25-p75)</span>
-            </div>
-            <div class="kpi-card">
-                <span class="kpi-title">Média Diária (Operações)</span>
-                <span class="kpi-value" id="kpiVolMedia">0</span>
-                <span class="kpi-sub alert" id="kpiVolTicket">Ticket: R$ 0,00</span>
-            </div>
+            <div class="chart-container"><canvas id="chartVol"></canvas></div>
         </div>
-        <div class="chart-container"><canvas id="chartVol"></canvas></div>
-    </div>
 
-    <!-- TAB 2: Financeiro -->
-    <div id="tab-fin" class="tab-content">
-        <div class="kpi-grid">
-            <div class="kpi-card">
-                <span class="kpi-title">Pico Financeiro</span>
-                <span class="kpi-value" id="kpiFinPico">--:--</span>
-                <span class="kpi-sub" id="kpiFinPicoSub">--</span>
+        <!-- TAB 2: Financeiro -->
+        <div id="tab-fin" class="tab-content">
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <span class="kpi-title">Pico Financeiro</span>
+                    <span class="kpi-value" id="kpiFinPico">--:--</span>
+                    <span class="kpi-sub" id="kpiFinPicoSub">--</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-title">Média Diária (Financeiro)</span>
+                    <span class="kpi-value" id="kpiFinMedia">R$ 0,00</span>
+                    <span class="kpi-sub">Por dia útil</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-title">Total Movimentado no Período</span>
+                    <span class="kpi-value" style="color: var(--accent-orange)" id="kpiFinTotal">R$ 0,00</span>
+                    <span class="kpi-sub alert" style="background: transparent">Acumulado</span>
+                </div>
             </div>
-            <div class="kpi-card">
-                <span class="kpi-title">Média Diária (Financeiro)</span>
-                <span class="kpi-value" id="kpiFinMedia">R$ 0,00</span>
-                <span class="kpi-sub">Por dia útil</span>
-            </div>
-            <div class="kpi-card">
-                <span class="kpi-title">Total Movimentado no Período</span>
-                <span class="kpi-value" style="color: var(--accent-orange)" id="kpiFinTotal">R$ 0,00</span>
-                <span class="kpi-sub alert" style="background: transparent">Acumulado</span>
-            </div>
+            <div class="chart-container"><canvas id="chartFin"></canvas></div>
         </div>
-        <div class="chart-container"><canvas id="chartFin"></canvas></div>
-    </div>
 
-    <!-- TAB 3: Gestores -->
-    <div id="tab-gestores" class="tab-content">
-        <div class="kpi-grid">
-            <div class="kpi-card">
-                <span class="kpi-title">Gestor Líder (Vol. Fin.)</span>
-                <span class="kpi-value" id="kpiGestorLider">--</span>
-                <span class="kpi-sub" id="kpiGestorShare">--% de Share</span>
+        <!-- TAB 3: Gestores -->
+        <div id="tab-gestores" class="tab-content">
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <span class="kpi-title">Gestor Líder (Vol. Fin.)</span>
+                    <span class="kpi-value" id="kpiGestorLider">--</span>
+                    <span class="kpi-sub" id="kpiGestorShare">--% de Share</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-title">Concentração Top 1</span>
+                    <span class="kpi-value" id="kpiGestorConc">0%</span>
+                    <span class="kpi-sub">Risco de dependência</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-title">Ticket Médio do Líder</span>
+                    <span class="kpi-value" id="kpiGestorTicket">R$ 0,00</span>
+                    <span class="kpi-sub alert">Destaque</span>
+                </div>
             </div>
-            <div class="kpi-card">
-                <span class="kpi-title">Concentração Top 1</span>
-                <span class="kpi-value" id="kpiGestorConc">0%</span>
-                <span class="kpi-sub">Risco de dependência</span>
-            </div>
-            <div class="kpi-card">
-                <span class="kpi-title">Ticket Médio do Líder</span>
-                <span class="kpi-value" id="kpiGestorTicket">R$ 0,00</span>
-                <span class="kpi-sub alert">Destaque</span>
-            </div>
+            <div class="chart-container"><canvas id="chartGestores"></canvas></div>
         </div>
-        <div class="chart-container"><canvas id="chartGestores"></canvas></div>
-    </div>
 
-    <!-- TAB 4: Corretoras -->
-    <div id="tab-corretoras" class="tab-content">
-        <div class="kpi-grid">
-            <div class="kpi-card">
-                <span class="kpi-title">Corretora Mais Ativa</span>
-                <span class="kpi-value" id="kpiCorrLider">--</span>
-                <span class="kpi-sub" id="kpiCorrOps">-- operações</span>
+        <!-- TAB 4: Corretoras -->
+        <div id="tab-corretoras" class="tab-content">
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <span class="kpi-title">Corretora Mais Ativa</span>
+                    <span class="kpi-value" id="kpiCorrLider">--</span>
+                    <span class="kpi-sub" id="kpiCorrOps">-- operações</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-title">Market Share (Itaú Corretora)</span>
+                    <span class="kpi-value" id="kpiCorrItauShare">0%</span>
+                    <span class="kpi-sub">Internalização</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-title">Corretoras Ativas no Período</span>
+                    <span class="kpi-value" id="kpiCorrCount">0</span>
+                    <span class="kpi-sub alert">Diversificação</span>
+                </div>
             </div>
-            <div class="kpi-card">
-                <span class="kpi-title">Market Share (Itaú Corretora)</span>
-                <span class="kpi-value" id="kpiCorrItauShare">0%</span>
-                <span class="kpi-sub">Internalização</span>
-            </div>
-            <div class="kpi-card">
-                <span class="kpi-title">Corretoras Ativas no Período</span>
-                <span class="kpi-value" id="kpiCorrCount">0</span>
-                <span class="kpi-sub alert">Diversificação</span>
+            <div class="chart-container" style="display: flex; justify-content: center; height: 350px;">
+                <div style="width: 50%; height: 100%;"><canvas id="chartCorretoras"></canvas></div>
             </div>
         </div>
-        <div class="chart-container" style="display: flex; justify-content: center; height: 350px;">
-            <div style="width: 50%; height: 100%;"><canvas id="chartCorretoras"></canvas></div>
-        </div>
-    </div>
 
-    <!-- TAB 5: Leadtime -->
-    <div id="tab-leadtime" class="tab-content">
-        <div class="kpi-grid">
-            <div class="kpi-card">
-                <span class="kpi-title">Leadtime Médio Global</span>
-                <span class="kpi-value" id="kpiLeadMedia">0 min</span>
-                <span class="kpi-sub">Tempo de Processamento</span>
+        <!-- TAB 5: Leadtime -->
+        <div id="tab-leadtime" class="tab-content">
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <span class="kpi-title">Leadtime Médio Global</span>
+                    <span class="kpi-value" id="kpiLeadMedia">0 min</span>
+                    <span class="kpi-sub">Tempo de Processamento</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-title">Horário Mais Crítico (Gargalo)</span>
+                    <span class="kpi-value" id="kpiLeadGargalo">--:--</span>
+                    <span class="kpi-sub alert" id="kpiLeadGargaloVal">-- min</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-title">SLA (< 15 min)</span>
+                    <span class="kpi-value" style="color: var(--accent-cyan)" id="kpiLeadSLA">0%</span>
+                    <span class="kpi-sub">Aderência ao Acordo</span>
+                </div>
             </div>
-            <div class="kpi-card">
-                <span class="kpi-title">Horário Mais Crítico (Gargalo)</span>
-                <span class="kpi-value" id="kpiLeadGargalo">--:--</span>
-                <span class="kpi-sub alert" id="kpiLeadGargaloVal">-- min</span>
-            </div>
-            <div class="kpi-card">
-                <span class="kpi-title">SLA (< 15 min)</span>
-                <span class="kpi-value" style="color: var(--accent-cyan)" id="kpiLeadSLA">0%</span>
-                <span class="kpi-sub">Aderência ao Acordo</span>
-            </div>
+            <div class="chart-container"><canvas id="chartLeadtime"></canvas></div>
         </div>
-        <div class="chart-container"><canvas id="chartLeadtime"></canvas></div>
+        
+        <!-- Tabela Compartilhada (Pendências) -->
+        <div class="table-container">
+            <h3>Amostra de Pendências Atual (Top 100)</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID Operação</th>
+                        <th>Gestor</th>
+                        <th>Origem</th>
+                        <th>Valor (R$)</th>
+                        <th>Status</th>
+                        <th>Registro</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                </tbody>
+            </table>
+        </div>
+    </div> <!-- Fim CETIP -->
+
+    <!-- OUTRAS ÁREAS (Placeholders) -->
+    <div id="area-selic" class="area-content">
+        <div class="em-construcao">
+            <h2>SELIC</h2>
+            <p>Visões de SELIC em desenvolvimento...</p>
+        </div>
     </div>
     
-    <div class="table-container">
-        <h3>Amostra de Pendências Atual (Top 100)</h3>
-        <table>
-            <thead>
-                <tr>
-                    <th>ID Operação</th>
-                    <th>Gestor</th>
-                    <th>Origem</th>
-                    <th>Valor (R$)</th>
-                    <th>Status</th>
-                    <th>Registro</th>
-                </tr>
-            </thead>
-            <tbody id="tableBody">
-            </tbody>
-        </table>
+    <div id="area-futuros" class="area-content">
+        <div class="em-construcao">
+            <h2>FUTUROS</h2>
+            <p>Visões de Futuros em desenvolvimento...</p>
+        </div>
+    </div>
+
+    <div id="area-rv" class="area-content">
+        <div class="em-construcao">
+            <h2>RENDA VARIÁVEL</h2>
+            <p>Visões de Renda Variável em desenvolvimento...</p>
+        </div>
+    </div>
+
+    <div id="area-mrv" class="area-content">
+        <div class="em-construcao">
+            <h2>MARGEM RENDA VARIÁVEL</h2>
+            <p>Visões de Margem RV em desenvolvimento...</p>
+        </div>
+    </div>
+
+    <div id="area-md" class="area-content">
+        <div class="em-construcao">
+            <h2>MARGEM DINHEIRO</h2>
+            <p>Visões de Margem Dinheiro em desenvolvimento...</p>
+        </div>
+    </div>
+
+    <div id="area-termo" class="area-content">
+        <div class="em-construcao">
+            <h2>TERMO</h2>
+            <p>Visões de Termo em desenvolvimento...</p>
+        </div>
     </div>
 
     <script>
@@ -241,9 +358,25 @@
             return formatBRL(v);
         };
 
+        // --- NAVEGAÇÃO DE ÁREAS ---
+        function switchArea(areaId) {
+            // Esconde todas as áreas
+            document.querySelectorAll('.area-content').forEach(el => el.classList.remove('active'));
+            // Remove active dos botões de área
+            document.querySelectorAll('.area-btn').forEach(el => el.classList.remove('active'));
+            
+            // Ativa a área selecionada
+            document.getElementById(areaId).classList.add('active');
+            event.currentTarget.classList.add('active');
+        }
+
+        // --- NAVEGAÇÃO DE VISÕES (Sub-abas) ---
         function openTab(tabId) {
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            // Pega o container da área atual para isolar a navegação
+            const currentArea = event.currentTarget.closest('.area-content');
+            currentArea.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            currentArea.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            
             document.getElementById(tabId).classList.add('active');
             event.currentTarget.classList.add('active');
         }
@@ -254,51 +387,63 @@
         const hours = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'];
         const dateSlider = document.getElementById('date-slider');
 
-        // INICIALIZAÇÃO VIA CSV
+        // LEITURA DO ARQUIVO ÚNICO resultado_sintetico.csv
         window.onload = () => {
-            Promise.all([
-                fetch('dados_master.csv').then(res => res.text()),
-                fetch('dados_pendencias.csv').then(res => res.text())
-            ])
-            .then(([csvMaster, csvPendencias]) => {
+            fetch('resultado_sintetico.csv')
+            .then(res => res.text())
+            .then(csvText => {
                 
-                // Parser da Base Master
-                Papa.parse(csvMaster, {
+                Papa.parse(csvText, {
                     header: true,
                     skipEmptyLines: true,
                     complete: function(results) {
                         const daysSet = new Set();
                         const gestoresSet = new Set();
 
-                        rawData = results.data.map(row => {
-                            daysSet.add(row.data_str);
-                            gestoresSet.add(row.gestor);
+                        results.data.forEach(row => {
+                            if (!row.data_operacao || !row.faixa_horaria) return; 
 
-                            // Garantia de cast rígido para evitar inflação no ticket médio
-                            // Transforma vírgulas em ponto caso a exportação do banco traga padrão PT-BR
-                            let vTotalStr = String(row.valor_total).replace(',', '.');
+                            daysSet.add(row.data_operacao);
+                            gestoresSet.add(row.codigo_gestor_sac);
+
+                            // Parse com formatação rígida para decimais
+                            let vTotalStr = String(row.valor_financeiro).replace(',', '.');
                             let leadStr = String(row.leadtime).replace(',', '.');
+                            
+                            let valFin = parseFloat(vTotalStr) || 0;
+                            let leadT = parseFloat(leadStr);
+                            if (isNaN(leadT)) leadT = 0; 
 
-                            return {
-                                dateStr: row.data_str,
-                                hour: row.hora,
-                                gestor: row.gestor,
+                            rawData.push({
+                                dateStr: row.data_operacao,
+                                hour: row.faixa_horaria,
+                                gestor: row.codigo_gestor_sac,
                                 origem: row.origem,
-                                corretora: row.corretora,
-                                volume: parseInt(row.volume, 10),
-                                valor: parseFloat(vTotalStr) || 0,
-                                leadtime: parseFloat(leadStr) || 0
-                            };
+                                corretora: row.codigo_contraparte_sac,
+                                volume: 1, 
+                                valor: valFin,
+                                leadtime: leadT
+                            });
+
+                            let isPendency = !['Liquidada', 'Finalizada', 'Concluída'].includes(row.situacao);
+                            if (isPendency) {
+                                pendenciasData.push({
+                                    id: row.codigo_operacao,
+                                    gestor: row.codigo_gestor_sac,
+                                    origem: row.origem,
+                                    status: row.situacao,
+                                    atualizacao: row.data_operacao + ' ' + row.faixa_horaria,
+                                    valor: valFin
+                                });
+                            }
                         });
 
-                        // Ordenar dias e montar a timeline do Slider
                         const sortedDays = Array.from(daysSet).sort();
                         uniqueDays = sortedDays.map(d => {
                             const dateObj = new Date(d + 'T00:00:00');
                             return { dateStr: d, displayDate: dateObj.toLocaleDateString('pt-BR') };
                         });
 
-                        // Preencher select de gestores dinamicamente
                         const selectGestor = document.getElementById('filtroGestor');
                         Array.from(gestoresSet).sort().forEach(g => {
                             if(g && g !== 'N/A') {
@@ -308,7 +453,6 @@
                             }
                         });
 
-                        // Setup Slider
                         const maxIndex = uniqueDays.length - 1;
                         if(maxIndex >= 0) {
                             noUiSlider.create(dateSlider, {
@@ -321,33 +465,12 @@
                     }
                 });
 
-                // Parser das Pendencias
-                Papa.parse(csvPendencias, {
-                    header: true,
-                    skipEmptyLines: true,
-                    complete: function(results) {
-                        pendenciasData = results.data.map(row => {
-                            let vFinStr = String(row.valor_financeiro).replace(',', '.');
-                            return {
-                                id: row.id_operacao,
-                                gestor: row.gestor,
-                                origem: row.origem,
-                                status: row.status,
-                                atualizacao: row.atualizacao, // Pode ser formatado aqui se necessário
-                                valor: parseFloat(vFinStr) || 0
-                            };
-                        });
-                        popularTabelaPendencias();
-                    }
-                });
-
-                // Remover tela de loading
                 document.getElementById('loading-screen').style.opacity = '0';
                 setTimeout(() => document.getElementById('loading-screen').style.display = 'none', 500);
 
             })
             .catch(err => {
-                document.getElementById('loading-screen').innerHTML = 'Erro ao carregar arquivos CSV. <br>Certifique-se de iniciar um servidor local (ex: python -m http.server)';
+                document.getElementById('loading-screen').innerHTML = 'Erro ao carregar o arquivo resultado_sintetico.csv. <br>Certifique-se de iniciar o servidor local.';
                 console.error("Erro no fetch CSV:", err);
             });
         };
@@ -359,7 +482,6 @@
             const gFiltro = document.getElementById('filtroGestor').value;
             const oFiltro = document.getElementById('filtroOrigem').value;
 
-            // Filtrar pendencias pela visão atual e pegar as 100 primeiras
             let pendFiltradas = pendenciasData.filter(d => 
                 (gFiltro === 'Todos' || d.gestor === gFiltro) &&
                 (oFiltro === 'Todos' || d.origem === oFiltro)
@@ -378,11 +500,9 @@
                 tbody.appendChild(tr);
             });
         }
-
-        // ---------- LÓGICA DE ATUALIZAÇÃO DOS GRÁFICOS (Mantida) ----------
         
         function atualizarDashboardGlobal() {
-            if(uniqueDays.length === 0) return; // Aguardando carregar CSV
+            if(uniqueDays.length === 0) return;
             
             const sliderValues = dateSlider.noUiSlider.get();
             const startStr = uniqueDays[sliderValues[0]].dateStr;
@@ -409,6 +529,7 @@
             popularTabelaPendencias();
         }
 
+        // COM A CORREÇÃO DE ZEROS IMPLEMENTADA
         function updateTabVolume(dados, diasUnicos) {
             const hourlyStats = {};
             hours.forEach(h => hourlyStats[h] = { vols: [] });
@@ -416,40 +537,51 @@
             const porDiaEHora = {};
             let totalVol = 0, totalVal = 0, qtdOps = 0;
 
+            const diasSet = new Set(dados.map(d => d.dateStr));
+            const diasArray = Array.from(diasSet);
+
             dados.forEach(d => {
                 const k = `${d.dateStr}_${d.hour}`;
                 if(!porDiaEHora[k]) porDiaEHora[k] = 0;
                 porDiaEHora[k] += d.volume;
                 totalVol += d.volume;
-                totalVal += d.valor; // Já vem agregado da query Master
+                totalVal += d.valor;
                 qtdOps += d.volume;
             });
 
-            Object.keys(porDiaEHora).forEach(k => {
-                const hr = k.split('_')[1];
-                if(hourlyStats[hr]) hourlyStats[hr].vols.push(porDiaEHora[k]);
+            diasArray.forEach(dia => {
+                hours.forEach(hr => {
+                    const k = `${dia}_${hr}`;
+                    const volNoHorario = porDiaEHora[k] || 0; 
+                    hourlyStats[hr].vols.push(volNoHorario);
+                });
             });
 
             const dMed = [], dP25 = [], dP75 = [];
             let picoH = '--:--', maxM = 0, volH = '--:--', maxDisp = 0;
 
             hours.forEach(h => {
-                const v = hourlyStats[h].vols.sort((a,b)=>a-b);
-                if(v.length===0) { dMed.push(0); dP25.push(0); dP75.push(0); return; }
-                const med = Math.round(v.reduce((a,b)=>a+b,0)/v.length);
+                const v = hourlyStats[h].vols.sort((a,b) => a - b);
+                if(v.length === 0) { dMed.push(0); dP25.push(0); dP75.push(0); return; }
+                
+                const med = Math.round(v.reduce((a,b) => a + b, 0) / v.length);
                 dMed.push(med);
+                
                 if(med > maxM) { maxM = med; picoH = h; }
 
-                const p25 = v[Math.floor(v.length*0.25)], p75 = v[Math.floor(v.length*0.75)];
-                dP25.push(p25); dP75.push(p75);
-                if((p75-p25) > maxDisp) { maxDisp = p75-p25; volH = h; }
+                const p25 = v[Math.floor(v.length * 0.25)];
+                const p75 = v[Math.floor(v.length * 0.75)];
+                dP25.push(p25); 
+                dP75.push(p75);
+                
+                if((p75 - p25) > maxDisp) { maxDisp = p75 - p25; volH = h; }
             });
 
             document.getElementById('kpiVolPico').innerText = picoH;
             document.getElementById('kpiVolPicoSub').innerText = `+${maxM} ops/dia`;
             document.getElementById('kpiVolVolatil').innerText = volH;
-            document.getElementById('kpiVolMedia').innerText = Math.round(totalVol/diasUnicos).toLocaleString('pt-BR');
-            document.getElementById('kpiVolTicket').innerText = `Ticket: ${formatBRL(totalVal/(qtdOps||1))}`;
+            document.getElementById('kpiVolMedia').innerText = Math.round(totalVol / diasUnicos).toLocaleString('pt-BR');
+            document.getElementById('kpiVolTicket').innerText = `Ticket: ${formatBRL(totalVal / (qtdOps || 1))}`;
 
             if(charts.vol) {
                 charts.vol.data.datasets[0].data = dP75;
@@ -531,7 +663,7 @@
                 document.getElementById('kpiGestorTicket').innerText = 'R$ 0,00';
             }
 
-            const lbls = sorted.map(s => s[0]).slice(0, 10); // Top 10 limit
+            const lbls = sorted.map(s => s[0]).slice(0, 10);
             const vals = sorted.map(s => s[1].fin).slice(0, 10);
 
             if(charts.gest) {
@@ -561,8 +693,8 @@
 
             const sorted = Object.entries(stats).sort((a,b)=>b[1]-a[1]);
             let itauShare = 0;
-            if(stats['Itaú'] || stats['ITAU']) {
-                let volItau = (stats['Itaú'] || 0) + (stats['ITAU'] || 0);
+            if(stats['Itaú'] || stats['ITAU'] || stats['BANCO ITAU S.A.'] || stats['ITAÚ CORRETORA']) {
+                let volItau = (stats['Itaú'] || 0) + (stats['ITAU'] || 0) + (stats['BANCO ITAU S.A.'] || 0) + (stats['ITAÚ CORRETORA'] || 0);
                 itauShare = Math.round((volItau/totalOps)*100);
             }
 
