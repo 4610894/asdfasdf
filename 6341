@@ -27,7 +27,7 @@
         .header-container { margin-bottom: 20px; display: flex; flex-direction: column; gap: 15px; }
         .header-container h1 { font-size: 24px; margin: 0; font-weight: 600; color: var(--text-primary); }
 
-        /* NOVO: Menu Superior de Áreas */
+        /* Menu Superior de Áreas */
         .areas-container {
             display: flex;
             gap: 12px;
@@ -103,7 +103,7 @@
         
         #loading-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-main); display: flex; justify-content: center; align-items: center; z-index: 9999; color: var(--accent-cyan); font-size: 20px; font-weight: bold; transition: opacity 0.5s; }
         
-        /* Placeholder para áreas em construção */
+        /* Placeholder para áreas em construção e Home */
         .em-construcao {
             display: flex;
             flex-direction: column;
@@ -116,6 +116,8 @@
             color: var(--text-secondary);
         }
         .em-construcao h2 { color: var(--accent-orange); margin-bottom: 10px;}
+        .home-banner { height: 250px; border: none; background: linear-gradient(to right, var(--bg-card), var(--bg-main)); }
+        .home-banner h2 { color: var(--accent-cyan); font-size: 28px; }
     </style>
 </head>
 <body>
@@ -127,14 +129,15 @@
         
         <!-- Menu Principal: Áreas -->
         <div class="areas-container">
+            <!-- Nova aba HOME como padrão -->
+            <button class="area-btn active" onclick="switchArea('area-home')">Home</button>
             <button class="area-btn" onclick="switchArea('area-selic')">SELIC</button>
             <button class="area-btn" onclick="switchArea('area-futuros')">Futuros</button>
             <button class="area-btn" onclick="switchArea('area-rv')">Renda Variável</button>
             <button class="area-btn" onclick="switchArea('area-mrv')">Margem RV</button>
             <button class="area-btn" onclick="switchArea('area-md')">Margem Dinheiro</button>
             <button class="area-btn" onclick="switchArea('area-termo')">Termo</button>
-            <!-- CETIP definido como ativo por padrão -->
-            <button class="area-btn active" onclick="switchArea('area-cetip')">CETIP</button>
+            <button class="area-btn" onclick="switchArea('area-cetip')">CETIP</button>
         </div>
         
         <!-- Filtros Globais (Aplicam-se à área ativa) -->
@@ -161,9 +164,36 @@
     </div>
 
     <!-- ========================================== -->
-    <!-- CONTAINER ÁREA: CETIP (Visões Existentes)  -->
+    <!-- CONTAINER ÁREA: HOME (Nova Tela Inicial)   -->
     <!-- ========================================== -->
-    <div id="area-cetip" class="area-content active">
+    <div id="area-home" class="area-content active">
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <span class="kpi-title">Volume Global Processado</span>
+                <span class="kpi-value" id="kpiHomeVol">0</span>
+                <span class="kpi-sub">Operações no período</span>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-title">Financeiro Global Movimentado</span>
+                <span class="kpi-value" id="kpiHomeFin">R$ 0,00</span>
+                <span class="kpi-sub">Acumulado</span>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-title">Saúde do SLA Global</span>
+                <span class="kpi-value" id="kpiHomeSLA">0%</span>
+                <span class="kpi-sub alert">Aderência < 15 min</span>
+            </div>
+        </div>
+        <div class="em-construcao home-banner">
+            <h2>VISÃO CONSOLIDADA</h2>
+            <p>Selecione uma área específica no menu superior para acessar os detalhamentos e gráficos intraday.</p>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- CONTAINER ÁREA: CETIP                      -->
+    <!-- ========================================== -->
+    <div id="area-cetip" class="area-content">
         <!-- Submenu: Visões da CETIP -->
         <div class="tabs-container">
             <button class="tab-btn active" onclick="openTab('tab-vol')">Volume Intradiário</button>
@@ -521,6 +551,7 @@
 
             const diasUnicos = new Set(dadosFiltrados.map(d => d.dateStr)).size || 1;
 
+            updateTabHome(dadosFiltrados); // Nova atualização da Home
             updateTabVolume(dadosFiltrados, diasUnicos);
             updateTabFinanceiro(dadosFiltrados, diasUnicos);
             updateTabGestores(dadosFiltrados);
@@ -529,7 +560,23 @@
             popularTabelaPendencias();
         }
 
-        // COM A CORREÇÃO DE ZEROS IMPLEMENTADA
+        // --- NOVA FUNÇÃO: Atualiza os KPIs Globais da Home ---
+        function updateTabHome(dados) {
+            let totalVol = 0;
+            let totalFin = 0;
+            let opsSLA = 0;
+
+            dados.forEach(d => {
+                totalVol += d.volume;
+                totalFin += d.valor;
+                if (d.leadtime <= 15.0) opsSLA += d.volume;
+            });
+
+            document.getElementById('kpiHomeVol').innerText = totalVol.toLocaleString('pt-BR');
+            document.getElementById('kpiHomeFin').innerText = formatBRLShort(totalFin);
+            document.getElementById('kpiHomeSLA').innerText = totalVol > 0 ? Math.round((opsSLA/totalVol)*100) + '%' : '0%';
+        }
+
         function updateTabVolume(dados, diasUnicos) {
             const hourlyStats = {};
             hours.forEach(h => hourlyStats[h] = { vols: [] });
