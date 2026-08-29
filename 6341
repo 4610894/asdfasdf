@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+html_home = """<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -818,3 +818,9 @@
     </script>
 </body>
 </html>
+"""
+
+with open('dashboard_liquidacao_home.html', 'w', encoding='utf-8') as f:
+    f.write(html_home)
+
+print("HTML com tela Home gerado.")
