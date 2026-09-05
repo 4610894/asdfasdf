@@ -1,47 +1,87 @@
-No diretório `projetos_luiz/saude_operacao`, tenho atualmente os seguintes arquivos:
+Preciso que você faça as seguintes alterações no dashboard atual. 
 
-- `gerar_dash.py`: responsável por ler o arquivo `resultado.csv` e gerar o dashboard atual.
-- `resultado.csv`: arquivo com os dados utilizados pelo dashboard. Atualmente ele ainda contém todas as linhas da base original apenas por motivo de simplificação.
-- `dashboard_ficticio_referencia.html`: dashboard de referência cujo visual e organização dos elementos quero utilizar como inspiração.
+IMPORTANTE: preserve toda a lógica, os cálculos, os dados, os filtros e as funcionalidades que já existem. As alterações abaixo devem ser implementadas sem remover ou alterar informações que já são apresentadas, exceto quando eu solicitar explicitamente.
 
-Quero que você analise primeiro o funcionamento atual do `gerar_dash.py` e a estrutura visual do `dashboard_ficticio_referencia.html`. Em seguida, adapte o dashboard atual para que ele tenha o mesmo estilo visual e a mesma organização/apresentação do dashboard de referência.
+1. LAYOUT GERAL
+- Atualmente existe um espaço muito grande entre a área dos filtros e as visualizações do dashboard.
+- Reduza significativamente esse espaço para deixar o dashboard mais compacto e aproveitar melhor a área disponível na tela.
+- Acredito que esse espaço esteja ocorrendo porque algumas visualizações estão sendo posicionadas fora da área principal, possivelmente ao lado do menu lateral.
+- Reorganize o layout para que TODAS as visualizações do dashboard fiquem dentro da área principal de conteúdo, ao lado do menu lateral, e não sejam posicionadas abaixo dele ou fora da área principal.
+- Garanta que os filtros e as visualizações fiquem visualmente próximos e bem organizados.
+- Preserve a responsividade e evite sobreposição ou corte de componentes.
 
-IMPORTANTE: a alteração deve ser exclusivamente visual.
+2. CARDS DE RESUMO — TOTAIS
+- Nos cards de resumo das visualizações, atualmente são exibidas as médias das variáveis.
+- Além das médias, inclua também os valores totais correspondentes a cada variável, sempre que fizer sentido para aquela visualização.
+- Por exemplo:
+  - Em "Volume Intradiário", além da média, exibir também o número TOTAL de operações realizadas no período selecionado.
+  - Em "Financeiro por Horário", além da média, exibir também o valor TOTAL do financeiro movimentado no período selecionado.
+- Aplique essa lógica às demais visualizações em que um valor total seja relevante.
+- Os valores dos totais devem respeitar os filtros selecionados pelo usuário.
+- Não substitua as médias existentes: os valores médios devem continuar sendo exibidos. Apenas acrescente os totais.
 
-Regras obrigatórias:
-1. NÃO altere a lógica de negócio existente.
-2. NÃO altere os cálculos, filtros, agregações ou tratamentos dos dados.
-3. NÃO altere as informações que atualmente são exibidas no dashboard.
-4. NÃO remova nenhuma das visualizações existentes.
-5. NÃO altere o significado ou os valores apresentados pelos gráficos, indicadores, tabelas ou demais componentes.
-6. Preserve integralmente as funcionalidades e interações que já existem.
-7. O `resultado.csv` deve continuar sendo utilizado da mesma maneira pelo sistema.
-8. O objetivo é modificar somente:
-   - layout;
-   - organização dos elementos;
-   - espaçamento;
-   - tipografia;
-   - cores;
-   - cards;
-   - cabeçalhos;
-   - posicionamento dos gráficos;
-   - estilos de tabelas;
-   - elementos visuais;
-   - responsividade;
-   - demais aspectos puramente visuais.
-9. Utilize o `dashboard_ficticio_referencia.html` como referência visual, tentando reproduzir sua identidade visual e estrutura sempre que isso for compatível com as visualizações já existentes.
-10. Caso algum elemento do dashboard de referência não exista no projeto atual, NÃO invente dados ou funcionalidades para preenchê-lo.
+3. SELIC — FINANCEIRO POR HORÁRIO
+- Na aba "Selic", especificamente na visualização "Financeiro por Horário":
+  - Nos cards de resumo localizados no topo, exiba o FINANCEIRO TOTAL do período.
+  - O valor deve ser apresentado com exatamente duas casas decimais.
+  - Utilize o formato brasileiro de números:
+    `xxx.xxx.xxx,xx`
+  - Não faça arredondamento para números inteiros ou simplifique o valor.
+  - Exemplo: `123.456.789,25`.
+- No gráfico de "Financeiro por Horário", altere a escala do eixo Y para apresentar os valores em BILHÕES.
+- Deixe explícito no eixo Y que a unidade utilizada é "Bilhões", para que o usuário consiga interpretar corretamente os valores.
 
-Antes de fazer as alterações:
-- identifique quais são todas as visualizações existentes no dashboard atual;
-- identifique quais elementos são responsáveis pela geração dessas visualizações;
-- compare a estrutura atual com a estrutura do dashboard de referência;
-- determine como aplicar o novo layout sem modificar a lógica existente.
+4. ABA NATUREZA
+- Na aba "Natureza", não utilize mais a coluna `natureza_operacao`.
+- Passe a utilizar a coluna `modalidade_operacao`.
+- A coluna `modalidade_operacao` possui uma segmentação mais adequada e facilita a análise.
+- Todos os filtros, agrupamentos, gráficos, legendas e demais elementos que atualmente dependem de `natureza_operacao` devem ser adaptados para utilizar `modalidade_operacao`, sem alterar a estrutura geral da análise.
 
-Depois, faça as alterações necessárias diretamente nos arquivos do projeto.
+5. VOLUME INTRADIÁRIO — COM E SEM TERMO
+- Na aba correspondente ao volume intradiário, atualmente existem duas análises:
+  - Volume Intradiário (sem termo)
+  - Volume Intradiário (termo)
+- Coloque as duas visualizações na MESMA ABA.
+- Organize-as verticalmente, uma abaixo da outra, em vez de colocá-las em abas separadas.
+- Identifique claramente cada uma das visualizações com um título:
+  - "Volume Intradiário — Sem Termo"
+  - "Volume Intradiário — Termo"
+- Ambas devem continuar utilizando os mesmos dados, filtros e cálculos que já utilizavam anteriormente.
 
-Ao final, apresente:
-1. quais arquivos foram alterados;
-2. quais alterações visuais foram realizadas;
-3. quais partes da lógica foram preservadas;
-4. uma confirmação explícita de que nenhuma visualização, cálculo ou informação existente foi removida ou modificada.
+6. FILTRO DE GESTORES
+- Na área de filtros referente aos gestores, atualmente existe um ComboBox no qual o usuário seleciona apenas um gestor por vez.
+- Substitua esse comportamento por uma lista de CHECKBOXES.
+- O usuário deve conseguir selecionar múltiplos gestores simultaneamente.
+- A seleção de múltiplos gestores deve funcionar corretamente em conjunto com os demais filtros existentes.
+- Ao selecionar, por exemplo, três gestores, todas as visualizações devem considerar conjuntamente os dados desses três gestores.
+- Deve ser possível desmarcar e marcar gestores individualmente.
+- Preserve a lógica atual de filtragem e apenas altere o componente de seleção para permitir múltiplas escolhas.
+
+7. REGRAS DE PRESERVAÇÃO
+- NÃO remova nenhuma visualização existente.
+- NÃO altere os cálculos existentes, exceto nos pontos explicitamente solicitados acima.
+- NÃO altere a origem dos dados.
+- NÃO altere os nomes das colunas existentes no arquivo de dados.
+- NÃO crie dados fictícios ou valores estimados.
+- NÃO substitua médias por totais: quando solicitado, os dois devem ser apresentados.
+- Todos os novos valores devem ser calculados a partir dos dados reais já utilizados pelo dashboard.
+- Os filtros devem continuar funcionando conjuntamente.
+- Faça as alterações de forma incremental sobre o código atual, evitando reescrever o projeto inteiro desnecessariamente.
+
+ANTES DE ALTERAR O CÓDIGO:
+1. Analise a implementação atual.
+2. Identifique onde estão definidos os filtros, cards, gráficos, abas e layouts.
+3. Identifique como os filtros atuais afetam as visualizações.
+4. Identifique quais alterações são necessárias para implementar cada item acima.
+5. Só então faça as modificações.
+
+AO FINAL:
+- Verifique se todas as visualizações continuam sendo exibidas.
+- Verifique se todos os filtros continuam funcionando.
+- Verifique especificamente se é possível selecionar múltiplos gestores.
+- Verifique se os totais dos cards respeitam os filtros aplicados.
+- Verifique a formatação brasileira dos valores financeiros.
+- Verifique se o eixo Y do gráfico financeiro está em bilhões.
+- Verifique se `modalidade_operacao` está sendo utilizada na aba Natureza.
+- Verifique se as visualizações "Sem Termo" e "Termo" estão na mesma aba e uma abaixo da outra.
+- Verifique se não existem espaços excessivos ou visualizações posicionadas fora da área principal do dashboard.
