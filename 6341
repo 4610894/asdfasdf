@@ -1,4 +1,8 @@
-Preciso que você faça as seguintes alterações no dashboard atual. 
+O projeto está localizado no diretório `projetos_luiz/saude_operacao`.
+
+Nesse diretório, o arquivo `gerar_dash.py` é responsável por processar os dados e gerar o dashboard. O arquivo `resultado.csv` contém os dados utilizados pelo dashboard.
+
+Com esse contexto, preciso que você faça as seguintes alterações no dashboard atual. 
 
 IMPORTANTE: preserve toda a lógica, os cálculos, os dados, os filtros e as funcionalidades que já existem. As alterações abaixo devem ser implementadas sem remover ou alterar informações que já são apresentadas, exceto quando eu solicitar explicitamente.
 
